@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>AIPort.Intelligence.Service</RootNamespace>
+    <AssemblyName>AIPort.Intelligence.Service</AssemblyName>
+    <!-- Gerar XML de documentação para Swagger -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="postman\**" />
+    <Content Remove="postman\**" />
+    <EmbeddedResource Remove="postman\**" />
+    <None Remove="postman\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Catalyst" Version="1.0.65141" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.4" />
+    <PackageReference Include="Microsoft.SemanticKernel" Version="1.73.0" />
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.AzureOpenAI" Version="1.73.0" />
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.73.0" />
+    <PackageReference Include="NuGet.CommandLine" Version="7.3.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Scalar.AspNetCore" Version="2.13.6" />
+  </ItemGroup>
+
+  <!-- Copiar o arquivo de regras para o diretório de output -->
+  <ItemGroup>
+    <None Update="rules\tenant-rules.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

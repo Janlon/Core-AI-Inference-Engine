@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "AIPort.Adapter.Orchestrator.Tests": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "AIPORT_GOOGLE_CREDENTIALS_PATH": "C:\\repositorio\\plataforma\\configs\\google_cloud_auth.json",
+        "AIPORT_TEST_AUDIO_PATH": "C:\\repositorio\\plataforma\\audio_files"
+      }
+    }
+  }
+}

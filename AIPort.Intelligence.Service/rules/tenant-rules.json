@@ -1,0 +1,72 @@
+{
+  "tenantRules": [
+    {
+      "tenantType": "residential",
+      "displayName": "Condomínio Residencial",
+      "accessRules": {
+        "requireMoradorConfirmation": true,
+        "allowedDocuments": [ "CPF", "RG", "CNH" ],
+        "visitantDefaultAction": "NOTIFICAR_MORADOR",
+        "deliveryDefaultAction": "SOLICITAR_IDENTIFICACAO"
+      },
+      "responses": {
+        "saudacao": "Você ligou para a portaria do condomínio.",
+        "solicitarDocumento": "Para agilizar seu atendimento, informe os dados solicitados pela portaria e, ao final, seu documento de identificação.",
+        "aguardar": "Aguarde um momento enquanto envio seus dados para a central e notifico o responsável.",
+        "despedida": "Obrigado pela visita. Tenha um ótimo dia!",
+        "urgencia": "Entendido. Acionando a segurança imediatamente. Por favor, aguarde."
+      }
+    },
+    {
+      "tenantType": "hospital",
+      "displayName": "Hospital / Clínica",
+      "accessRules": {
+        "requireMoradorConfirmation": false,
+        "allowedDocuments": [ "CPF", "CRM", "COREN", "RG" ],
+        "visitantDefaultAction": "SOLICITAR_DOC",
+        "deliveryDefaultAction": "SOLICITAR_IDENTIFICACAO"
+      },
+      "responses": {
+        "saudacao": "Bem-vindo ao hospital. Por favor, informe o motivo da sua visita e seu documento.",
+        "solicitarDocumento": "Por motivos de segurança e rastreabilidade, preciso do seu documento de identificação.",
+        "aguardar": "Por favor, dirija-se à recepção e aguarde o atendimento.",
+        "despedida": "Obrigado. Cuide-se e tenha uma boa recuperação!",
+        "urgencia": "Emergência registrada! Equipe de plantão está sendo acionada agora."
+      }
+    },
+    {
+      "tenantType": "corporate",
+      "displayName": "Escritório Corporativo",
+      "accessRules": {
+        "requireMoradorConfirmation": true,
+        "allowedDocuments": [ "CPF", "CNH", "RG", "Passaporte" ],
+        "visitantDefaultAction": "NOTIFICAR_MORADOR",
+        "deliveryDefaultAction": "AGUARDAR_CONFIRMACAO"
+      },
+      "responses": {
+        "saudacao": "Bom dia! Bem-vindo. Qual empresa ou pessoa você deseja visitar?",
+        "solicitarDocumento": "Para registro de entrada, preciso de um documento com foto.",
+        "aguardar": "Estou notificando a empresa. Por favor, aguarde na recepção.",
+        "despedida": "Obrigado pela visita. Tenha um excelente dia!",
+        "urgencia": "Situação de emergência reportada. Segurança e TI estão sendo notificados."
+      }
+    },
+    {
+      "tenantType": "logistics",
+      "displayName": "Centro de Distribuição / Logística",
+      "accessRules": {
+        "requireMoradorConfirmation": false,
+        "allowedDocuments": [ "CPF", "CNH", "RG" ],
+        "visitantDefaultAction": "SOLICITAR_DOC",
+        "deliveryDefaultAction": "SOLICITAR_DOC"
+      },
+      "responses": {
+        "saudacao": "Bem-vindo ao centro de distribuição. Informe placa do veículo e seu documento.",
+        "solicitarDocumento": "Preciso do seu documento e da nota fiscal ou ordem de serviço.",
+        "aguardar": "Aguarde. Estou verificando o agendamento da sua carga.",
+        "despedida": "Entrega/coleta registrada. Bom retorno!",
+        "urgencia": "Ocorrência registrada. Supervisor de pátio sendo acionado."
+      }
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+USE aiport;
+
+ALTER TABLE Tenants
+  ADD COLUMN IF NOT EXISTS AiProfile ENUM('AGRESSIVO','CONSERVADOR','ULTRA_ESTAVEL') NOT NULL DEFAULT 'CONSERVADOR' AFTER RecordingEnabled,
+  ADD COLUMN IF NOT EXISTS AiRegexConfidenceThreshold DECIMAL(5,4) NULL AFTER AiProfile,
+  ADD COLUMN IF NOT EXISTS AiNlpConfidenceThreshold DECIMAL(5,4) NULL AFTER AiRegexConfidenceThreshold,
+  ADD COLUMN IF NOT EXISTS AiGlobalConfidenceThreshold DECIMAL(5,4) NULL AFTER AiNlpConfidenceThreshold;

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Avatar visitante indefinido">
+  <defs>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#64748b"/>
+      <stop offset="100%" stop-color="#334155"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="24" fill="#0b1220"/>
+  <circle cx="64" cy="46" r="24" fill="url(#g2)"/>
+  <path d="M22 110c3-18 16-30 42-30s39 12 42 30" fill="#334155"/>
+  <circle cx="56" cy="43" r="3" fill="#cbd5e1"/>
+  <circle cx="72" cy="43" r="3" fill="#cbd5e1"/>
+  <path d="M54 58c3 2 6 3 10 3s7-1 10-3" stroke="#cbd5e1" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <text x="64" y="95" text-anchor="middle" fill="#94a3b8" font-size="26" font-family="Arial, sans-serif">?</text>
+</svg>

@@ -1,0 +1,6 @@
+@AIPort.Intelligence.Service_HostAddress = http://localhost:5037
+
+GET {{AIPort.Intelligence.Service_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
