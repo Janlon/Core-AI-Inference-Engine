@@ -232,28 +232,32 @@ public sealed class LlmEngine : ILlmProcessor
             - AGUARDAR_CONFIRMACAO  → aguardar confirmação adicional
             - SOLICITAR_IDENTIFICACAO → pedir identificação sem especificar tipo
 
-                        Regras de saída obrigatórias:
-                        - Retorne SOMENTE JSON (sem markdown, sem texto extra, sem comentários).
-                        - Use exatamente os nomes de campos abaixo.
-                        - Se a informação não estiver disponível, use null.
-                        - NUNCA deixe de preencher "intencao" e "acaoSugerida".
+            Regras de saída obrigatórias:
+            - Retorne SOMENTE JSON (sem markdown, sem texto extra, sem comentários).
+            - Use exatamente os nomes de campos abaixo.
+            - Se a informação não estiver disponível, use null.
+            - NUNCA deixe de preencher "intencao" e "acaoSugerida".
+            - Extraia o máximo de informações possíveis, mesmo que o texto esteja incompleto, fragmentado ou parcialmente compreensível.
+            - Sempre tente preencher todos os campos de "dadosExtraidos" com base em qualquer pista, mesmo que parcial.
+            - Se o visitante disser apenas parte do nome, número, unidade, bloco, documento ou qualquer dado, preencha o campo correspondente com o valor parcial.
+            - Não ignore informações parciais ou frases incompletas.
 
-                        Responda SOMENTE com JSON válido no formato abaixo:
+            Responda SOMENTE com JSON válido no formato abaixo:
             {
               "intencao": "<valor do enum>",
               "dadosExtraidos": {
                 "nome": "<string|null>",
-                                "nomeVisitante": "<string|null>",
+                "nomeVisitante": "<string|null>",
                 "documento": "<string|null>",
-                                "cpf": "<string|null>",
+                "cpf": "<string|null>",
                 "unidade": "<string|null>",
-                                "bloco": "<string|null>",
-                                "torre": "<string|null>",
-                                "empresa": "<string|null>",
-                                "parentesco": "<string|null>",
-                                "estaComVeiculo": "<bool>",
-                                "placa": "<string|null>",
-                                "eEntregador": "<bool>"
+                "bloco": "<string|null>",
+                "torre": "<string|null>",
+                "empresa": "<string|null>",
+                "parentesco": "<string|null>",
+                "estaComVeiculo": "<bool>",
+                "placa": "<string|null>",
+                "eEntregador": "<bool>"
               },
               "respostaTexto": "<texto natural em português brasileiro para o visitante>",
               "acaoSugerida": "<valor do enum>"

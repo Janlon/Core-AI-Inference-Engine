@@ -12,8 +12,38 @@ public sealed partial class RegexEngine : IRegexProcessor
     private readonly IOptions<AIServiceOptions> _options;
     private readonly ILogger<RegexEngine> _logger;
 
-    [GeneratedRegex(@"\b(\d{3})[.\-]?(\d{3})[.\-]?(\d{3})[-]?(\d{2})\b", RegexOptions.Compiled)]
+
+    // CPF formatado: 123.456.789-01 ou só números: 12345678901
+    [GeneratedRegex(@"([0-9]{3}\.?[0-9]{3}\.?[0-9]{3}-?[0-9]{2})", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
     private static partial Regex CpfPattern();
+    [GeneratedRegex(@"(?:cpf\s*[:=]?\s*)?([0-9]{11})", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex CpfOnlyDigitsPattern();
+    [GeneratedRegex(@"([0-9]{3}\s+[0-9]{3}\s+[0-9]{3}\s+[0-9]{2})", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex CpfSpacedPattern();
+    [GeneratedRegex(@"((?:um|dois|tr[eê]s|quatro|cinco|seis|sete|oito|nove|zero)(?:\s+(?:um|dois|tr[eê]s|quatro|cinco|seis|sete|oito|nove|zero)){10,})", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex CpfSpokenPattern();
+    [GeneratedRegex(@"(?:apartamento|apê|ap|unidade|sala)\s*(?:número|nº|n°)?\s*([0-9]{2,5}[A-Za-z]?)", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex UnidadePattern_Novo();
+    [GeneratedRegex(@"(?<![0-9-])([0-9]{3,4})(?![0-9-]|\s+[0-9]{4})", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex UnidadeIsoladaPattern();
+    [GeneratedRegex(@"meu nome [eé]\s+([A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+(?:\s+[A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+)*)", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex NomeMeuNomePattern();
+    [GeneratedRegex(@"(?:sou (?:o|a)|aqui é (?:o|a)|me chamo)\s+([A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+(?:\s+[A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+)*)", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex NomeSouPattern();
+    [GeneratedRegex(@"(?:Oi|Olá|Boa (?:tarde|noite|dia)|Tudo (?:bem|certo)|E aí|Opa|Fala),?\s*(?:aqui é|sou|me chamo|é)\s*(?:o|a)?\s*([A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+(?:\s+[A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+)*)", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex NomeSaudacaoPattern();
+    [GeneratedRegex(@"(?:sou|é)\s+(?:o|a)\s+([A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+(?:\s+[A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+)*)", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex NomeSouOApattern();
+    [GeneratedRegex(@"(?:sou|é)\s+([A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+(?:\s+[A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+)*)", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex NomeSouSimplesPattern();
+    [GeneratedRegex(@"^([A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+(?:\s+[A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+)*)\s+(?:quero|vim|vou|preciso|queria|gostaria)", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex NomeInicioQueroPattern();
+    [GeneratedRegex(@"^([A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+(?:\s+[A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+)*)$", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex NomeSimplesPattern();
+    [GeneratedRegex(@"^(?:é\s+)?([A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+(?:\s+[A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+)*)\s*\.?$", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex NomeSimplesComEPattern();
+    [GeneratedRegex(@"^(?:sr\.?|sra\.?|dr\.?|dra\.?|prof\.?)?\s*([A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+(?:\s+[A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+)*)", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex NomeComTituloPattern();
 
     [GeneratedRegex(@"\b(cpf|documento|identifica(?:cao|ção)|rg|cnh)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
     private static partial Regex DocumentCuePattern();
@@ -120,6 +150,7 @@ public sealed partial class RegexEngine : IRegexProcessor
         else if (DespedidaPattern().IsMatch(texto)) { intencao = Intencao.Despedida; hits++; }
         else if (SaudacaoPattern().IsMatch(texto)) { intencao = Intencao.Saudacao; hits++; }
 
+
         // --- Documento (CPF) ---
         var cpfMatch = CpfPattern().Match(texto);
         if (cpfMatch.Success)
@@ -129,21 +160,58 @@ public sealed partial class RegexEngine : IRegexProcessor
             intencao ??= Intencao.Identificacao;
             hits += 2;
         }
-        else if (TryExtractCpfFromSpokenOrSpacedDigits(texto, out var normalizedCpf))
+        else
         {
-            documento = normalizedCpf;
-            cpf = normalizedCpf;
-            intencao ??= Intencao.Identificacao;
-            hits += 2;
+            var cpfOnlyDigits = CpfOnlyDigitsPattern().Match(texto);
+            if (cpfOnlyDigits.Success)
+            {
+                documento = cpfOnlyDigits.Groups[1].Value;
+                cpf = cpfOnlyDigits.Groups[1].Value;
+                intencao ??= Intencao.Identificacao;
+                hits += 2;
+            }
+            else
+            {
+                var cpfSpaced = CpfSpacedPattern().Match(texto);
+                if (cpfSpaced.Success)
+                {
+                    documento = cpfSpaced.Groups[1].Value.Replace(" ", "");
+                    cpf = documento;
+                    intencao ??= Intencao.Identificacao;
+                    hits += 2;
+                }
+                else if (CpfSpokenPattern().Match(texto).Success)
+                {
+                    // fallback: já tratado em TryExtractCpfFromSpokenOrSpacedDigits
+                    if (TryExtractCpfFromSpokenOrSpacedDigits(texto, out var normalizedCpf2))
+                    {
+                        documento = normalizedCpf2;
+                        cpf = normalizedCpf2;
+                        intencao ??= Intencao.Identificacao;
+                        hits += 2;
+                    }
+                }
+            }
         }
 
-        // --- Unidade ---
-        var unidadeMatch = UnidadePattern().Match(texto);
+
+        // --- Unidade (Apartamento) ---
+        var unidadeMatch = UnidadePattern_Novo().Match(texto);
         if (unidadeMatch.Success)
         {
             unidade = unidadeMatch.Groups[1].Value;
             intencao ??= Intencao.Identificacao;
             hits++;
+        }
+        else
+        {
+            var unidadeIsolada = UnidadeIsoladaPattern().Match(texto);
+            if (unidadeIsolada.Success)
+            {
+                unidade = unidadeIsolada.Groups[1].Value;
+                intencao ??= Intencao.Identificacao;
+                hits++;
+            }
         }
 
         // --- Bloco/Torre ---
@@ -163,17 +231,24 @@ public sealed partial class RegexEngine : IRegexProcessor
             hits++;
         }
 
-        // --- Nome explicito ("meu nome e Janlon" / "me chamo Joao Silva") ---
-        var nomeMatch = NomeExplicitoPattern().Match(texto);
+
+        // --- Nome explicito e variações ---
+        var nomeMatch = NomeMeuNomePattern().Match(texto);
+        if (!nomeMatch.Success) nomeMatch = NomeSouPattern().Match(texto);
+        if (!nomeMatch.Success) nomeMatch = NomeSaudacaoPattern().Match(texto);
+        if (!nomeMatch.Success) nomeMatch = NomeSouOApattern().Match(texto);
+        if (!nomeMatch.Success) nomeMatch = NomeSouSimplesPattern().Match(texto);
+        if (!nomeMatch.Success) nomeMatch = NomeInicioQueroPattern().Match(texto);
+        if (!nomeMatch.Success) nomeMatch = NomeSimplesPattern().Match(texto);
+        if (!nomeMatch.Success) nomeMatch = NomeSimplesComEPattern().Match(texto);
+        if (!nomeMatch.Success) nomeMatch = NomeComTituloPattern().Match(texto);
         if (nomeMatch.Success)
         {
             nome = nomeMatch.Groups[1].Value.Trim();
             nomeVisitante = nome;
             intencao ??= Intencao.Identificacao;
             hits += 2;
-
             // Autoidentificacao explicita ("meu nome e ...") e um sinal forte.
-            // Eleva a confianca para evitar escalonamento desnecessario ao LLM.
             hits += 1;
         }
 

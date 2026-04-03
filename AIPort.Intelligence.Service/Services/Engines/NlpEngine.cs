@@ -137,7 +137,8 @@ public sealed partial class NlpEngine : INlpProcessor
             }
         }
 
-        // Fallback heuristico para cobrir casos nao identificados pelo modelo
+
+        // Fallback heurístico para nomes: padrões explícitos, início de frase, nomes simples
         if (nome is null)
         {
             var nomeAuto = NomeAutoDeclaradoPattern().Match(texto);
@@ -159,6 +160,32 @@ public sealed partial class NlpEngine : INlpProcessor
                     extractions++;
                     break;
                 }
+            }
+        }
+
+        // Novo: nome no início da frase (fallback para casos simples)
+        if (nome is null)
+        {
+            var palavras = texto.Trim().Split(' ');
+            if (palavras.Length > 0)
+            {
+                var primeira = palavras[0].Trim();
+                if (primeira.Length > 1 && char.IsUpper(primeira[0]) && primeira.All(char.IsLetter))
+                {
+                    nome = primeira;
+                    extractions++;
+                }
+            }
+        }
+
+        // Novo: nome simples em resposta direta
+        if (nome is null)
+        {
+            var match = Regex.Match(texto.Trim(), @"^([A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+(?:\s+[A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+)*)$", RegexOptions.IgnoreCase);
+            if (match.Success)
+            {
+                nome = match.Groups[1].Value.Trim();
+                extractions++;
             }
         }
 
