@@ -1,5 +1,4 @@
 using AIPort.Adapter.Orchestrator.Data;
-using AIPort.Adapter.Orchestrator.Data.Repositories;
 using AIPort.Adapter.Orchestrator.Agi.Interfaces;
 using AIPort.Adapter.Orchestrator.Config;
 using AIPort.Adapter.Orchestrator.Services.Interfaces;
@@ -15,7 +14,6 @@ namespace AIPort.Adapter.Orchestrator.Services;
 public sealed class HealthCheckService : IHealthCheckService
 {
     private readonly IDbConnectionFactory _dbConnectionFactory;
-    private readonly ICallSessionRepository _callSessionRepository;
     private readonly IAgiRuntimeState _agiRuntimeState;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IntelligenceServiceOptions _intelligenceOptions;
@@ -24,14 +22,12 @@ public sealed class HealthCheckService : IHealthCheckService
 
     public HealthCheckService(
         IDbConnectionFactory dbConnectionFactory,
-        ICallSessionRepository callSessionRepository,
         IAgiRuntimeState agiRuntimeState,
         IHttpClientFactory httpClientFactory,
         IOptions<IntelligenceServiceOptions> intelligenceOptions,
         ILogger<HealthCheckService> logger)
     {
         _dbConnectionFactory = dbConnectionFactory ?? throw new ArgumentNullException(nameof(dbConnectionFactory));
-        _callSessionRepository = callSessionRepository ?? throw new ArgumentNullException(nameof(callSessionRepository));
         _agiRuntimeState = agiRuntimeState ?? throw new ArgumentNullException(nameof(agiRuntimeState));
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _intelligenceOptions = intelligenceOptions?.Value ?? throw new ArgumentNullException(nameof(intelligenceOptions));
@@ -107,7 +103,7 @@ public sealed class HealthCheckService : IHealthCheckService
     public async Task<IDictionary<string, object>> GetHealthStatusAsync(CancellationToken cancellationToken = default)
     {
         var databaseHealth = await CheckDatabaseHealthAsync(1, cancellationToken);
-        var activeCalls = await _callSessionRepository.CountActiveSessionsAsync(cancellationToken);
+        var activeCalls = _agiRuntimeState.ActiveChannels;
         var aiHealth = await ProbeIntelligenceServiceAsync(cancellationToken);
 
         var asteriskStatus = !_agiRuntimeState.IsEnabled

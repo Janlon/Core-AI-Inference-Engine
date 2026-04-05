@@ -21,6 +21,8 @@ public static class OrchestratorEnvironmentOverrides
 
         var overrides = new Dictionary<string, string?>
         {
+            ["InputSourceMode"] = Environment.GetEnvironmentVariable("AIPORT_INPUT_SOURCE_MODE"),
+
             ["Server:Urls"] = urls,
             ["Server:RequestHeadersTimeoutSeconds"] = requestHeadersTimeout,
             ["Server:KeepAliveTimeoutSeconds"] = keepAliveTimeout,
@@ -52,7 +54,18 @@ public static class OrchestratorEnvironmentOverrides
             ["Speech:Google:TtsSampleRateHertz"] = Environment.GetEnvironmentVariable("AIPORT_GOOGLE_TTS_SAMPLE_RATE_HZ"),
             ["Speech:Google:TtsSpeakingRate"] = Environment.GetEnvironmentVariable("AIPORT_GOOGLE_TTS_SPEAKING_RATE"),
             ["Speech:Google:SttLanguageCode"] = Environment.GetEnvironmentVariable("AIPORT_GOOGLE_STT_LANGUAGE_CODE"),
-            ["Speech:Google:SttSampleRateHertz"] = Environment.GetEnvironmentVariable("AIPORT_GOOGLE_STT_SAMPLE_RATE_HZ")
+            ["Speech:Google:SttSampleRateHertz"] = Environment.GetEnvironmentVariable("AIPORT_GOOGLE_STT_SAMPLE_RATE_HZ"),
+
+            ["DeveloperSandbox:TenantPid"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_TENANT_PID"),
+            ["DeveloperSandbox:CallerId"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_CALLER_ID"),
+            ["DeveloperSandbox:CalledNumber"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_CALLED_NUMBER"),
+            ["DeveloperSandbox:Context"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_CONTEXT"),
+            ["DeveloperSandbox:SessionPrefix"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_SESSION_PREFIX"),
+            ["DeveloperSandbox:DisableWebhookCalls"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_DISABLE_WEBHOOK_CALLS"),
+            ["DeveloperSandbox:WindowsVoice:Provider"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_WINDOWS_VOICE_PROVIDER"),
+            ["DeveloperSandbox:WindowsVoice:SubscriptionKey"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_WINDOWS_VOICE_SUBSCRIPTION_KEY"),
+            ["DeveloperSandbox:WindowsVoice:Region"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_WINDOWS_VOICE_REGION"),
+            ["DeveloperSandbox:WindowsVoice:Language"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_WINDOWS_VOICE_LANGUAGE")
         };
 
         configuration.AddInMemoryCollection(overrides.Where(x => !string.IsNullOrWhiteSpace(x.Value))!);

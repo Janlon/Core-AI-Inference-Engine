@@ -39,4 +39,18 @@ public class RegexEngineIntegrationTests
         Assert.Equal(expectedVeiculo, dados.EstaComVeiculo);
         Assert.Equal(expectedEntregador, dados.EEntregador);
     }
+
+    [Fact]
+    public async Task RegexEngine_ReturnsDebugMatches_ForTriggeredRules()
+    {
+        var engine = CreateEngine();
+
+        var result = await engine.ProcessAsync("Oi, sou João, vim visitar o apartamento 204 bloco 12.");
+
+        Assert.NotNull(result.Debug);
+        Assert.Contains(result.Debug!.RegexMatches, match => match.Rule == "SaudacaoPattern");
+        Assert.Contains(result.Debug.RegexMatches, match => match.Rule == "NomePattern" && match.Value == "João");
+        Assert.Contains(result.Debug.RegexMatches, match => match.Rule == "UnidadePattern_Novo" && match.Value == "204");
+        Assert.Contains(result.Debug.RegexMatches, match => match.Rule == "BlocoPattern" && match.Value == "12");
+    }
 }

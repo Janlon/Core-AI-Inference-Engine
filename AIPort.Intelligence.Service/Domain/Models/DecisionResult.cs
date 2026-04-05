@@ -28,4 +28,7 @@ public record DecisionResult
 
     /// <summary>Tipo do tenant usado para aplicar as regras de fluxo.</summary>
     public string? TenantType { get; init; }
+
+    /// <summary>Metadados de depuração úteis para sandbox e ajuste de regras.</summary>
+    public DecisionDebugInfo? Debug { get; init; }
 }

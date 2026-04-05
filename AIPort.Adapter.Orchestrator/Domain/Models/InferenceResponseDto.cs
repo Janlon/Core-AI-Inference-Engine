@@ -9,6 +9,7 @@ public sealed record InferenceResponseDto
     public double Confianca { get; init; }
     public required string CamadaResolucao { get; init; }
     public string? TenantType { get; init; }
+    public DecisionDebugInfoDto? Debug { get; init; }
 }
 
 public sealed record DadosExtraidosDto
@@ -26,4 +27,15 @@ public sealed record DadosExtraidosDto
     public string? Placa { get; init; }
     public bool EEntregador { get; init; }
     public bool TemDadosExtraidos { get; init; }
+}
+
+public sealed record DecisionDebugInfoDto
+{
+    public IReadOnlyList<RegexDebugMatchDto> RegexMatches { get; init; } = Array.Empty<RegexDebugMatchDto>();
+}
+
+public sealed record RegexDebugMatchDto
+{
+    public required string Rule { get; init; }
+    public string? Value { get; init; }
 }

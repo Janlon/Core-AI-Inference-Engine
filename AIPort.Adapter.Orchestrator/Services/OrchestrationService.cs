@@ -276,7 +276,12 @@ public sealed class OrchestrationService : IOrchestrationService
                 SessionId = call.SessionId,
                 AcaoExecutada = execution.AcaoExecutada,
                 RespostaFalada = execution.RespostaFalada,
-                Sucesso = true
+                Sucesso = true,
+                Intencao = iaResponse.Intencao,
+                CamadaResolucao = iaResponse.CamadaResolucao,
+                Confianca = iaResponse.Confianca,
+                DadosExtraidos = iaResponse.DadosExtraidos,
+                Debug = iaResponse.Debug
             };
         }
         catch (AgiHangupException)
@@ -292,7 +297,12 @@ public sealed class OrchestrationService : IOrchestrationService
                 AcaoExecutada = acaoExecutada,
                 RespostaFalada = "",
                 Sucesso = false,
-                MotivoFalha = "Canal encerrado pelo Asterisk."
+                MotivoFalha = "Canal encerrado pelo Asterisk.",
+                Intencao = iaResponse?.Intencao,
+                CamadaResolucao = iaResponse?.CamadaResolucao,
+                Confianca = iaResponse?.Confianca,
+                DadosExtraidos = iaResponse?.DadosExtraidos,
+                Debug = iaResponse?.Debug
             };
         }
         catch (Exception ex)
@@ -641,6 +651,7 @@ public sealed class OrchestrationService : IOrchestrationService
         {
             ["callerId"] = call.CallerId,
             ["channel"] = call.Channel,
+            ["inputSource"] = call.InputSource,
             ["tenantPid"] = tenant.Pid.ToString(CultureInfo.InvariantCulture),
             ["tenantAiProfile"] = tenant.AiProfile
         };

@@ -48,6 +48,7 @@ public sealed class DecisionEngine : IDecisionEngine
         var thresholds = ResolveThresholds(request);
         var tenantRule = _rulesLoader.GetRule(request.TenantType);
         var state = new ProcessingState(request.Texto, request.TenantType);
+        DecisionDebugInfo? regexDebug = null;
 
         _logger.LogInformation(
             "Iniciando decisão. SessionId={Session}, TenantType={Tenant}, AiProfile={Profile}, RegexThr={RegexThr:F2}, NlpThr={NlpThr:F2}, GlobalThr={GlobalThr:F2}",
@@ -62,12 +63,13 @@ public sealed class DecisionEngine : IDecisionEngine
         if (opts.Regex.Enabled)
         {
             var regexResult = await _regexProcessor.ProcessAsync(request.Texto, ct);
+            regexDebug = regexResult.Debug;
             MergeIntoState(state, regexResult);
 
             if (regexResult.Confianca >= thresholds.Regex)
             {
                 _logger.LogInformation("Decisão resolvida pela camada Regex (confiança={C:P0}).", regexResult.Confianca);
-                return BuildDecision(regexResult, tenantRule, request.TenantType);
+                return BuildDecision(regexResult, tenantRule, request.TenantType, regexDebug);
             }
         }
         else
@@ -84,7 +86,7 @@ public sealed class DecisionEngine : IDecisionEngine
             if (nlpResult.Confianca >= thresholds.Nlp)
             {
                 _logger.LogInformation("Decisão resolvida pela camada NLP (confiança={C:P0}).", nlpResult.Confianca);
-                return BuildDecision(nlpResult, tenantRule, request.TenantType);
+                return BuildDecision(nlpResult, tenantRule, request.TenantType, regexDebug);
             }
         }
 
@@ -104,7 +106,7 @@ public sealed class DecisionEngine : IDecisionEngine
                 DadosExtraidos = state.ToDadosExtraidos()
             };
 
-            return BuildDecision(slotFillingResult, tenantRule, request.TenantType);
+            return BuildDecision(slotFillingResult, tenantRule, request.TenantType, regexDebug);
         }
 
         // ── Camada 3: LLM ────────────────────────────────────────────────────
@@ -121,13 +123,13 @@ public sealed class DecisionEngine : IDecisionEngine
                 DadosExtraidos = state.ToDadosExtraidos()
             };
 
-            return BuildDecision(clarification, tenantRule, request.TenantType);
+            return BuildDecision(clarification, tenantRule, request.TenantType, regexDebug);
         }
 
         _logger.LogInformation("Escalando para camada LLM (confiança acumulada={C:P0}).", state.MelhorConfianca);
         var llmResult = await _llmProcessor.ProcessAsync(request.Texto, state, tenantRule, ct);
 
-        return BuildDecision(llmResult, tenantRule, request.TenantType);
+        return BuildDecision(llmResult, tenantRule, request.TenantType, regexDebug);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -165,7 +167,8 @@ public sealed class DecisionEngine : IDecisionEngine
     private static DecisionResult BuildDecision(
         ProcessingLayerResult result,
         Domain.Rules.TenantRule? tenantRule,
-        string tenantType)
+        string tenantType,
+        DecisionDebugInfo? fallbackDebug)
     {
         var intencao = NormalizeIntencao(result.Intencao, result.DadosExtraidos);
         var acao = result.AcaoSugerida
@@ -182,7 +185,8 @@ public sealed class DecisionEngine : IDecisionEngine
             AcaoSugerida = acao,
             Confianca = result.Confianca,
             CamadaResolucao = result.Camada,
-            TenantType = tenantType
+            TenantType = tenantType,
+            Debug = result.Debug ?? fallbackDebug
         };
     }
 

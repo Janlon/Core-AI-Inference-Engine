@@ -13,6 +13,7 @@ public sealed class AgiCallContext
     public int TenantPid { get; set; }
     public string? AudioFilePath { get; set; }
     public string? PreTranscribedText { get; set; }
+    public string InputSource { get; set; } = "Asterisk";
     public IVoiceChannel? VoiceChannel { get; set; }
     public DateTimeOffset StartedAtUtc { get; set; } = DateTimeOffset.UtcNow;
 

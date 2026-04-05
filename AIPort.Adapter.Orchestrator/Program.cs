@@ -15,6 +15,8 @@ using Microsoft.Extensions.Options;
 var builder = WebApplication.CreateBuilder(args);
 
 OrchestratorEnvironmentOverrides.Apply(builder.Configuration);
+var runtimeInputOptions = builder.Configuration.Get<RuntimeInputOptions>() ?? new RuntimeInputOptions();
+var useDeveloperSandbox = runtimeInputOptions.InputSourceMode is InputSourceMode.WindowsText or InputSourceMode.WindowsVoice;
 
 var serverConfig = new ServerOptions();
 builder.Configuration.GetSection(ServerOptions.SectionName).Bind(serverConfig);
@@ -32,6 +34,7 @@ builder.Services.Configure<MariaDbOptions>(builder.Configuration.GetSection(Mari
 builder.Services.Configure<WebhookOptions>(builder.Configuration.GetSection(WebhookOptions.SectionName));
 builder.Services.Configure<SpeechOptions>(builder.Configuration.GetSection(SpeechOptions.SectionName));
 builder.Services.Configure<ServerOptions>(builder.Configuration.GetSection(ServerOptions.SectionName));
+builder.Services.Configure<RuntimeInputOptions>(builder.Configuration);
 
 builder.Services.AddSingleton<IDbConnectionFactory, MariaDbConnectionFactory>();
 builder.Services.AddSingleton<IAgiRuntimeState, AgiRuntimeState>();
@@ -57,7 +60,14 @@ builder.Services.AddScoped<IOrchestrationService, OrchestrationService>();
 builder.Services.AddScoped<IAgiCallHandler, AgiCallHandler>();
 builder.Services.AddScoped<IHealthCheckService, HealthCheckService>();
 
-builder.Services.AddHostedService<FastAgiBackgroundServer>();
+if (useDeveloperSandbox)
+{
+    builder.Services.AddHostedService<DeveloperSandboxHostedService>();
+}
+else
+{
+    builder.Services.AddHostedService<FastAgiBackgroundServer>();
+}
 
 builder.Services.AddHttpClient<IIntelligenceServiceClient, IntelligenceServiceClient>((sp, client) =>
 {
@@ -70,17 +80,24 @@ builder.Services.AddHttpClient<IIntelligenceServiceClient, IntelligenceServiceCl
     return BuildTransientHttpPolicy(opts.MaxRetryAttempts, opts.RetryBaseDelayMs);
 });
 
-builder.Services.AddHttpClient<IWebhookClient, WebhookClient>((sp, client) =>
+if (useDeveloperSandbox && runtimeInputOptions.DeveloperSandbox.DisableWebhookCalls)
 {
-    var opts = sp.GetRequiredService<IOptions<WebhookOptions>>().Value;
-    var timeoutMs = Math.Max(1, Math.Min(2000, opts.TimeoutMs));
-    client.Timeout = TimeSpan.FromMilliseconds(timeoutMs);
-}).AddPolicyHandler((sp, _) =>
+    builder.Services.AddSingleton<IWebhookClient, SandboxWebhookClient>();
+}
+else
 {
-    var opts = sp.GetRequiredService<IOptions<WebhookOptions>>().Value;
-    var maxRetries = Math.Max(0, Math.Min(2, opts.MaxRetryAttempts));
-    return BuildTransientHttpPolicy(maxRetries, opts.RetryBaseDelayMs);
-});
+    builder.Services.AddHttpClient<IWebhookClient, WebhookClient>((sp, client) =>
+    {
+        var opts = sp.GetRequiredService<IOptions<WebhookOptions>>().Value;
+        var timeoutMs = Math.Max(1, Math.Min(2000, opts.TimeoutMs));
+        client.Timeout = TimeSpan.FromMilliseconds(timeoutMs);
+    }).AddPolicyHandler((sp, _) =>
+    {
+        var opts = sp.GetRequiredService<IOptions<WebhookOptions>>().Value;
+        var maxRetries = Math.Max(0, Math.Min(2, opts.MaxRetryAttempts));
+        return BuildTransientHttpPolicy(maxRetries, opts.RetryBaseDelayMs);
+    });
+}
 
 builder.Services.AddControllers();
 builder.Services.AddSingleton<IEventService, EventService>();

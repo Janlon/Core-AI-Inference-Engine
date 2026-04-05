@@ -24,4 +24,7 @@ public record ProcessingLayerResult
 
     /// <summary>Nome identificador da camada que gerou este resultado.</summary>
     public required string Camada { get; init; }
+
+    /// <summary>Metadados opcionais de depuração gerados pela camada.</summary>
+    public DecisionDebugInfo? Debug { get; init; }
 }

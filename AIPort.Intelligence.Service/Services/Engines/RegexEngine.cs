@@ -113,7 +113,7 @@ public sealed partial class RegexEngine : IRegexProcessor
 
     public Task<ProcessingLayerResult> ProcessAsync(string texto, CancellationToken ct = default)
     {
-        var timeout = TimeSpan.FromMilliseconds(_options.Value.Regex.TimeoutMs);
+        var timeout = TimeSpan.FromHours(2); // TimeSpan.FromMilliseconds(_options.Value.Regex.TimeoutMs);
         try
         {
             var result = ExecutePatterns(texto, timeout);
@@ -129,6 +129,7 @@ public sealed partial class RegexEngine : IRegexProcessor
 
     private ProcessingLayerResult ExecutePatterns(string texto, TimeSpan timeout)
     {
+        var debugMatches = new List<RegexDebugMatch>();
         string? nome = null;
         string? nomeVisitante = null;
         string? nomeVisitado = null;
@@ -146,15 +147,40 @@ public sealed partial class RegexEngine : IRegexProcessor
         int hits = 0;
 
         // --- Intencao ---
-        if (UrgenciaPattern().IsMatch(texto)) { intencao = Intencao.Urgencia; hits += 3; }
-        else if (DespedidaPattern().IsMatch(texto)) { intencao = Intencao.Despedida; hits++; }
-        else if (SaudacaoPattern().IsMatch(texto)) { intencao = Intencao.Saudacao; hits++; }
+        var urgenciaMatch = UrgenciaPattern().Match(texto);
+        if (urgenciaMatch.Success)
+        {
+            RegisterDebugMatch(debugMatches, "UrgenciaPattern", urgenciaMatch.Value);
+            intencao = Intencao.Urgencia;
+            hits += 3;
+        }
+        else
+        {
+            var despedidaMatch = DespedidaPattern().Match(texto);
+            if (despedidaMatch.Success)
+            {
+                RegisterDebugMatch(debugMatches, "DespedidaPattern", despedidaMatch.Value);
+                intencao = Intencao.Despedida;
+                hits++;
+            }
+            else
+            {
+                var saudacaoMatch = SaudacaoPattern().Match(texto);
+                if (saudacaoMatch.Success)
+                {
+                    RegisterDebugMatch(debugMatches, "SaudacaoPattern", saudacaoMatch.Value);
+                    intencao = Intencao.Saudacao;
+                    hits++;
+                }
+            }
+        }
 
 
         // --- Documento (CPF) ---
         var cpfMatch = CpfPattern().Match(texto);
         if (cpfMatch.Success)
         {
+            RegisterDebugMatch(debugMatches, "CpfPattern", cpfMatch.Value);
             documento = cpfMatch.Value;
             cpf = cpfMatch.Value;
             intencao ??= Intencao.Identificacao;
@@ -165,6 +191,7 @@ public sealed partial class RegexEngine : IRegexProcessor
             var cpfOnlyDigits = CpfOnlyDigitsPattern().Match(texto);
             if (cpfOnlyDigits.Success)
             {
+                RegisterDebugMatch(debugMatches, "CpfOnlyDigitsPattern", cpfOnlyDigits.Groups[1].Value);
                 documento = cpfOnlyDigits.Groups[1].Value;
                 cpf = cpfOnlyDigits.Groups[1].Value;
                 intencao ??= Intencao.Identificacao;
@@ -175,6 +202,7 @@ public sealed partial class RegexEngine : IRegexProcessor
                 var cpfSpaced = CpfSpacedPattern().Match(texto);
                 if (cpfSpaced.Success)
                 {
+                    RegisterDebugMatch(debugMatches, "CpfSpacedPattern", cpfSpaced.Groups[1].Value);
                     documento = cpfSpaced.Groups[1].Value.Replace(" ", "");
                     cpf = documento;
                     intencao ??= Intencao.Identificacao;
@@ -185,6 +213,7 @@ public sealed partial class RegexEngine : IRegexProcessor
                     // fallback: já tratado em TryExtractCpfFromSpokenOrSpacedDigits
                     if (TryExtractCpfFromSpokenOrSpacedDigits(texto, out var normalizedCpf2))
                     {
+                        RegisterDebugMatch(debugMatches, "CpfSpokenPattern", normalizedCpf2);
                         documento = normalizedCpf2;
                         cpf = normalizedCpf2;
                         intencao ??= Intencao.Identificacao;
@@ -199,6 +228,7 @@ public sealed partial class RegexEngine : IRegexProcessor
         var unidadeMatch = UnidadePattern_Novo().Match(texto);
         if (unidadeMatch.Success)
         {
+            RegisterDebugMatch(debugMatches, "UnidadePattern_Novo", unidadeMatch.Groups[1].Value);
             unidade = unidadeMatch.Groups[1].Value;
             intencao ??= Intencao.Identificacao;
             hits++;
@@ -208,6 +238,7 @@ public sealed partial class RegexEngine : IRegexProcessor
             var unidadeIsolada = UnidadeIsoladaPattern().Match(texto);
             if (unidadeIsolada.Success)
             {
+                RegisterDebugMatch(debugMatches, "UnidadeIsoladaPattern", unidadeIsolada.Groups[1].Value);
                 unidade = unidadeIsolada.Groups[1].Value;
                 intencao ??= Intencao.Identificacao;
                 hits++;
@@ -218,6 +249,7 @@ public sealed partial class RegexEngine : IRegexProcessor
         var blocoMatch = BlocoPattern().Match(texto);
         if (blocoMatch.Success)
         {
+            RegisterDebugMatch(debugMatches, "BlocoPattern", blocoMatch.Groups[1].Value);
             bloco = blocoMatch.Groups[1].Value;
             intencao ??= Intencao.Identificacao;
             hits++;
@@ -226,6 +258,7 @@ public sealed partial class RegexEngine : IRegexProcessor
         var torreMatch = TorrePattern().Match(texto);
         if (torreMatch.Success)
         {
+            RegisterDebugMatch(debugMatches, "TorrePattern", torreMatch.Groups[1].Value);
             torre = torreMatch.Groups[1].Value;
             intencao ??= Intencao.Identificacao;
             hits++;
@@ -244,6 +277,7 @@ public sealed partial class RegexEngine : IRegexProcessor
         if (!nomeMatch.Success) nomeMatch = NomeComTituloPattern().Match(texto);
         if (nomeMatch.Success)
         {
+            RegisterDebugMatch(debugMatches, "NomePattern", nomeMatch.Groups[1].Value.Trim());
             nome = nomeMatch.Groups[1].Value.Trim();
             nomeVisitante = nome;
             intencao ??= Intencao.Identificacao;
@@ -257,6 +291,7 @@ public sealed partial class RegexEngine : IRegexProcessor
             var nomeVisitadoMatch = NomeVisitadoPattern().Match(texto);
             if (nomeVisitadoMatch.Success)
             {
+                RegisterDebugMatch(debugMatches, "NomeVisitadoPattern", nomeVisitadoMatch.Groups[1].Value.Trim());
                 nomeVisitado = nomeVisitadoMatch.Groups[1].Value.Trim();
                 intencao ??= Intencao.Identificacao;
                 hits++;
@@ -282,6 +317,7 @@ public sealed partial class RegexEngine : IRegexProcessor
         var empresaMatch = EmpresaPattern().Match(texto);
         if (empresaMatch.Success)
         {
+            RegisterDebugMatch(debugMatches, "EmpresaPattern", empresaMatch.Groups[1].Value.Trim());
             empresa = empresaMatch.Groups[1].Value.Trim();
             intencao ??= Intencao.Identificacao;
             hits++;
@@ -291,14 +327,17 @@ public sealed partial class RegexEngine : IRegexProcessor
         var parentescoMatch = ParentescoPattern().Match(texto);
         if (parentescoMatch.Success)
         {
+            RegisterDebugMatch(debugMatches, "ParentescoPattern", parentescoMatch.Value.Trim());
             parentesco = parentescoMatch.Value.Trim();
             intencao ??= Intencao.Identificacao;
             hits++;
         }
 
         // --- Veículo / Placa ---
-        if (VeiculoPattern().IsMatch(texto))
+        var veiculoMatch = VeiculoPattern().Match(texto);
+        if (veiculoMatch.Success)
         {
+            RegisterDebugMatch(debugMatches, "VeiculoPattern", veiculoMatch.Value);
             estaComVeiculo = true;
             hits++;
         }
@@ -306,14 +345,17 @@ public sealed partial class RegexEngine : IRegexProcessor
         var placaMatch = PlacaMercosulPattern().Match(texto);
         if (placaMatch.Success)
         {
+            RegisterDebugMatch(debugMatches, "PlacaMercosulPattern", placaMatch.Groups[1].Value.ToUpperInvariant());
             placa = placaMatch.Groups[1].Value.ToUpperInvariant();
             estaComVeiculo = true;
             hits += 2;
         }
 
         // --- Entregador ---
-        if (EntregadorPattern().IsMatch(texto))
+        var entregadorMatch = EntregadorPattern().Match(texto);
+        if (entregadorMatch.Success)
         {
+            RegisterDebugMatch(debugMatches, "EntregadorPattern", entregadorMatch.Value);
             eEntregador = true;
             intencao ??= Intencao.Identificacao;
             hits += 2;
@@ -344,7 +386,8 @@ public sealed partial class RegexEngine : IRegexProcessor
                 EstaComVeiculo = estaComVeiculo,
                 Placa = placa,
                 EEntregador = eEntregador
-            }
+            },
+            Debug = new DecisionDebugInfo { RegexMatches = debugMatches }
         };
     }
 
@@ -394,5 +437,14 @@ public sealed partial class RegexEngine : IRegexProcessor
 
         cpf = digitsOnly;
         return true;
+    }
+
+    private static void RegisterDebugMatch(List<RegexDebugMatch> debugMatches, string rule, string? value)
+    {
+        debugMatches.Add(new RegexDebugMatch
+        {
+            Rule = rule,
+            Value = value
+        });
     }
 }

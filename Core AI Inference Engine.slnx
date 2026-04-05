@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="AIPort.Adapter.Orchestrator.Tests/AIPort.Adapter.Orchestrator.Tests.csproj" />
   <Project Path="AIPort.Adapter.Orchestrator/AIPort.Adapter.Orchestrator.csproj" />
+  <Project Path="AIPort.Intelligence.Service.Tests/AIPort.Intelligence.Service.Tests.csproj" />
   <Project Path="AIPort.Intelligence.Service/AIPort.Intelligence.Service.csproj" />
 </Solution>

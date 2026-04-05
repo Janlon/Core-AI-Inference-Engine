@@ -31,6 +31,7 @@ public sealed class AgiCallHandler : IAgiCallHandler
             TenantPid = request.TenantPid,
             AudioFilePath = request.AudioFilePath,
             PreTranscribedText = request.PreTranscribedText,
+            InputSource = "Asterisk",
             VoiceChannel = channel
         };
 
