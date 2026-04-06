@@ -10,11 +10,11 @@
         "deliveryDefaultAction": "SOLICITAR_IDENTIFICACAO"
       },
       "responses": {
-        "saudacao": "Você ligou para a portaria do condomínio.",
-        "solicitarDocumento": "Para agilizar seu atendimento, informe os dados solicitados pela portaria e, ao final, seu documento de identificação.",
+        "saudacao": "Aguarde um minuto.",
+        "solicitarDocumento": "Me passa o número do seu CPF ou RG, por favor.",
         "aguardar": "Aguarde um momento enquanto envio seus dados para a central e notifico o responsável.",
-        "despedida": "Obrigado pela visita. Tenha um ótimo dia!",
-        "urgencia": "Entendido. Acionando a segurança imediatamente. Por favor, aguarde."
+        "despedida": "Obrigado pela visita!",
+        "urgencia": "Entendido. Acionando a segurança imediatamente."
       }
     },
     {

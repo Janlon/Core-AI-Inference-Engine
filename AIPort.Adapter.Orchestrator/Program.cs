@@ -34,6 +34,7 @@ builder.Services.Configure<MariaDbOptions>(builder.Configuration.GetSection(Mari
 builder.Services.Configure<WebhookOptions>(builder.Configuration.GetSection(WebhookOptions.SectionName));
 builder.Services.Configure<SpeechOptions>(builder.Configuration.GetSection(SpeechOptions.SectionName));
 builder.Services.Configure<ServerOptions>(builder.Configuration.GetSection(ServerOptions.SectionName));
+builder.Services.Configure<FallbackRoutingOptions>(builder.Configuration.GetSection(FallbackRoutingOptions.SectionName));
 builder.Services.Configure<RuntimeInputOptions>(builder.Configuration);
 
 builder.Services.AddSingleton<IDbConnectionFactory, MariaDbConnectionFactory>();
@@ -134,7 +135,15 @@ app.MapGet("/health", async (IHealthCheckService healthCheck) =>
 app.UseAuthorization();
 app.MapControllers();
 
+
 app.Run();
+
+// Mantém o console aberto em modo texto/sandbox para facilitar testes interativos
+if (useDeveloperSandbox)
+{
+    Console.WriteLine("Modo texto ativo. Digite 'exit' para sair.");
+    while (Console.ReadLine() != "exit") { }
+}
 
 static IAsyncPolicy<HttpResponseMessage> BuildTransientHttpPolicy(int maxRetryAttempts, int retryBaseDelayMs)
 {

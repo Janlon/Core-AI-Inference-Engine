@@ -35,8 +35,31 @@ public sealed class TenantsController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] bool includeInactive = true, CancellationToken cancellationToken = default)
     {
-        var tenants = await _tenantRepository.ListAsync(includeInactive, cancellationToken);
-        return Ok(tenants.Select(MapResponse));
+        try
+        {
+            var tenants = await _tenantRepository.ListAsync(includeInactive, cancellationToken);
+            return Ok(tenants.Select(MapResponse));
+        }
+        catch (TaskCanceledException tce)
+        {
+            // Log de cancelamento por task
+            ILogger logger = HttpContext.RequestServices.GetService(typeof(ILogger<TenantsController>)) as ILogger<TenantsController>;
+            logger?.LogWarning(tce, "Task cancelada (TaskCanceledException) em List (TenantsController).");
+            return StatusCode(499, "Task cancelada (TaskCanceledException).");
+        }
+        catch (OperationCanceledException oce)
+        {
+            // Log de cancelamento explícito
+            ILogger logger = HttpContext.RequestServices.GetService(typeof(ILogger<TenantsController>)) as ILogger<TenantsController>;
+            logger?.LogWarning(oce, "Requisição cancelada pelo cliente ou timeout atingido em List (TenantsController).");
+            return StatusCode(499, "Requisição cancelada pelo cliente ou timeout atingido.");
+        }
+        catch (Exception ex)
+        {
+            ILogger logger = HttpContext.RequestServices.GetService(typeof(ILogger<TenantsController>)) as ILogger<TenantsController>;
+            logger?.LogError(ex, "Erro inesperado em List (TenantsController).");
+            throw;
+        }
     }
 
     [HttpGet("{id:int}")]

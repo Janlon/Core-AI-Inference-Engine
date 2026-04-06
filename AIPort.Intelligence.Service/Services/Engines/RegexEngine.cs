@@ -11,6 +11,26 @@ public sealed partial class RegexEngine : IRegexProcessor
 {
     private readonly IOptions<AIServiceOptions> _options;
     private readonly ILogger<RegexEngine> _logger;
+    private static readonly HashSet<string> InvalidSingleWordNameCandidates = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "oi", "ola", "olá", "opa", "fala", "salve", "eai", "e", "aí", "ei", "beleza", "joia", "jóia", "baum", "bao", "bão",
+        "bom", "boa", "dia", "tarde", "noite", "obrigado", "obrigada", "sim", "nao", "não",
+        "entregador", "motoboy", "pedido", "entrega", "ifood"
+    };
+
+    private static readonly HashSet<string> NonNameTokens = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "oi", "ola", "olá", "opa", "fala", "salve", "eai", "e", "aí", "ei", "beleza", "joia", "jóia", "baum", "bao", "bão",
+        "bom", "boa", "dia", "tarde", "noite", "obrigado", "obrigada", "sim", "nao", "não",
+        "quero", "falar", "com", "visitar", "ver", "sou", "me", "chamo", "meu", "nome",
+        "aqui", "e", "é", "vim", "venho", "preciso", "para", "pra", "no", "na", "ao",
+        "o", "a", "os", "as", "um", "uma", "entregador", "motoboy", "pedido", "entrega", "ifood"
+    };
+
+    private static readonly HashSet<string> TrailingContextTokens = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "na", "no", "em", "para", "pra", "ao", "a", "o", "bloco", "torre", "apartamento", "apto", "unidade"
+    };
 
 
     // CPF formatado: 123.456.789-01 ou só números: 12345678901
@@ -30,7 +50,7 @@ public sealed partial class RegexEngine : IRegexProcessor
     private static partial Regex NomeMeuNomePattern();
     [GeneratedRegex(@"(?:sou (?:o|a)|aqui é (?:o|a)|me chamo)\s+([A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+(?:\s+[A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+)*)", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
     private static partial Regex NomeSouPattern();
-    [GeneratedRegex(@"(?:Oi|Olá|Boa (?:tarde|noite|dia)|Tudo (?:bem|certo)|E aí|Opa|Fala),?\s*(?:aqui é|sou|me chamo|é)\s*(?:o|a)?\s*([A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+(?:\s+[A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+)*)", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"(?:Oi|Olá|Boa (?:tarde|noite|dia)|Tudo (?:bem|certo)|E aí|Opa|Fala|Beleza|J[oó]ia|Baum|B[aã]o),?\s*(?:aqui é|sou|me chamo|é)\s*(?:o|a)?\s*([A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+(?:\s+[A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+)*)", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
     private static partial Regex NomeSaudacaoPattern();
     [GeneratedRegex(@"(?:sou|é)\s+(?:o|a)\s+([A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+(?:\s+[A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+)*)", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
     private static partial Regex NomeSouOApattern();
@@ -61,7 +81,7 @@ public sealed partial class RegexEngine : IRegexProcessor
     [GeneratedRegex(@"\btorre\s*[n°#]?\s*([A-Za-z0-9]{1,10})\b", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
     private static partial Regex TorrePattern();
 
-    [GeneratedRegex(@"\b(?:Boa\s+(?:tarde|noite|manh[aã])|Ol[aá]|Oi|Bom\s+dia|Salve)\b",
+    [GeneratedRegex(@"\b(?:Boa\s+(?:tarde|noite|manh[aã])|Ol[aá]|Oi|Bom\s+dia|Salve|Beleza|J[oó]ia|Baum|B[aã]o)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase)]
     private static partial Regex SaudacaoPattern();
 
@@ -80,7 +100,7 @@ public sealed partial class RegexEngine : IRegexProcessor
     private static partial Regex NomeExplicitoPattern();
 
     // Captura o nome de quem o visitante quer ver: "visitar a Giovanna", "falar com Pedro"
-    [GeneratedRegex(@"\b(?:visitar\s+(?:a\s+|o\s+)?|falar\s+com\s+|ver\s+(?:a\s+|o\s+))([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)",
+    [GeneratedRegex(@"\b(?:visitar\s+(?:a\s+|o\s+)?|falar\s+com\s+(?:a\s+|o\s+)?|ver\s+(?:a\s+|o\s+))([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)(?=\s*[,\.!\?;:]|\s+(?:na|no|em|para|pra|ao|a|o|bloco|torre|apartamento|apto|unidade)\b|$)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase)]
     private static partial Regex NomeVisitadoPattern();
 
@@ -104,6 +124,10 @@ public sealed partial class RegexEngine : IRegexProcessor
     [GeneratedRegex(@"\b(?:entregador|entrega|ifood|rappi|mercado\s+livre|correios|motoboy)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase)]
     private static partial Regex EntregadorPattern();
+
+    // RG: 7 a 10 dígitos, podendo ter letra no final
+    [GeneratedRegex(@"\b([0-9]{7,10}[A-Za-z]?)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex RgPattern();
 
     public RegexEngine(IOptions<AIServiceOptions> options, ILogger<RegexEngine> logger)
     {
@@ -277,13 +301,17 @@ public sealed partial class RegexEngine : IRegexProcessor
         if (!nomeMatch.Success) nomeMatch = NomeComTituloPattern().Match(texto);
         if (nomeMatch.Success)
         {
-            RegisterDebugMatch(debugMatches, "NomePattern", nomeMatch.Groups[1].Value.Trim());
-            nome = nomeMatch.Groups[1].Value.Trim();
-            nomeVisitante = nome;
-            intencao ??= Intencao.Identificacao;
-            hits += 2;
-            // Autoidentificacao explicita ("meu nome e ...") e um sinal forte.
-            hits += 1;
+            var nomeCandidato = NormalizeNameCandidate(nomeMatch.Groups[1].Value);
+            if (IsValidPersonNameCandidate(nomeCandidato))
+            {
+                RegisterDebugMatch(debugMatches, "NomePattern", nomeCandidato);
+                nome = nomeCandidato;
+                nomeVisitante = nome;
+                intencao ??= Intencao.Identificacao;
+                hits += 2;
+                // Autoidentificacao explicita ("meu nome e ...") e um sinal forte.
+                hits += 1;
+            }
         }
 
         // --- Nome visitado ("quero visitar a Giovanna") ---
@@ -291,10 +319,14 @@ public sealed partial class RegexEngine : IRegexProcessor
             var nomeVisitadoMatch = NomeVisitadoPattern().Match(texto);
             if (nomeVisitadoMatch.Success)
             {
-                RegisterDebugMatch(debugMatches, "NomeVisitadoPattern", nomeVisitadoMatch.Groups[1].Value.Trim());
-                nomeVisitado = nomeVisitadoMatch.Groups[1].Value.Trim();
-                intencao ??= Intencao.Identificacao;
-                hits++;
+                var nomeVisitadoCandidato = NormalizeNameCandidate(nomeVisitadoMatch.Groups[1].Value);
+                if (IsValidPersonNameCandidate(nomeVisitadoCandidato))
+                {
+                    RegisterDebugMatch(debugMatches, "NomeVisitadoPattern", nomeVisitadoCandidato);
+                    nomeVisitado = nomeVisitadoCandidato;
+                    intencao ??= Intencao.Identificacao;
+                    hits++;
+                }
             }
         }
 
@@ -361,6 +393,19 @@ public sealed partial class RegexEngine : IRegexProcessor
             hits += 2;
         }
 
+        // --- Documento (RG) ---
+        if (documento is null)
+        {
+            var rgMatch = RgPattern().Match(texto);
+            if (rgMatch.Success)
+            {
+                RegisterDebugMatch(debugMatches, "RgPattern", rgMatch.Groups[1].Value);
+                documento = rgMatch.Groups[1].Value;
+                intencao ??= Intencao.Identificacao;
+                hits += 2;
+            }
+        }
+
         // Bonus de completude: nome + unidade/documento = identificacao suficientemente completa
         if ((nome is not null || nomeVisitante is not null) && (unidade is not null || documento is not null || cpf is not null))
             hits += 3;
@@ -398,6 +443,46 @@ public sealed partial class RegexEngine : IRegexProcessor
         Intencao = null,
         DadosExtraidos = new()
     };
+
+    private static bool IsValidPersonNameCandidate(string? candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+            return false;
+
+        var tokens = candidate
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(token => token.Trim(',', '.', ';', ':', '!', '?', '"', '\''))
+            .Where(token => token.Length > 0)
+            .ToArray();
+
+        if (tokens.Length == 0)
+            return false;
+
+        if (tokens.Length == 1 && InvalidSingleWordNameCandidates.Contains(tokens[0]))
+            return false;
+
+        if (tokens.All(token => NonNameTokens.Contains(token)))
+            return false;
+
+        return true;
+    }
+
+    private static string NormalizeNameCandidate(string? candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+            return string.Empty;
+
+        var tokens = candidate
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(token => token.Trim(',', '.', ';', ':', '!', '?', '"', '\''))
+            .Where(token => token.Length > 0)
+            .ToList();
+
+        while (tokens.Count > 0 && TrailingContextTokens.Contains(tokens[^1]))
+            tokens.RemoveAt(tokens.Count - 1);
+
+        return string.Join(' ', tokens);
+    }
 
     private static bool TryExtractCpfFromSpokenOrSpacedDigits(string texto, out string cpf)
     {

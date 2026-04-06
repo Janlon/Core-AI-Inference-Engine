@@ -257,9 +257,6 @@ public sealed class DecisionEngine : IDecisionEngine
         if (!hasDestinoExplicito && string.IsNullOrWhiteSpace(dados.Documento) && string.IsNullOrWhiteSpace(dados.Cpf))
             return AcaoSugerida.SOLICITAR_IDENTIFICACAO;
 
-        if (hasDestinoExplicito && regras?.AccessRules.RequireMoradorConfirmation == true)
-            return AcaoSugerida.NOTIFICAR_MORADOR;
-
         if (dados.Documento is null)
             return AcaoSugerida.SOLICITAR_DOC;
 

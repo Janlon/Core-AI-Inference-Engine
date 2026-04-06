@@ -3,6 +3,7 @@ using AIPort.Intelligence.Service.Services;
 using AIPort.Intelligence.Service.Services.Engines;
 using AIPort.Intelligence.Service.Services.Interfaces;
 using Scalar.AspNetCore;
+using System.Text.Encodings.Web;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -31,6 +32,7 @@ builder.Services.AddControllers()
     {
         opts.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
         opts.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+        opts.JsonSerializerOptions.Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
     });
 
 // ── OpenAPI (.NET 10 nativo) ─────────────────────────────────────────────────

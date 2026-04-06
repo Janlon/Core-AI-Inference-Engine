@@ -3,9 +3,11 @@ using AIPort.Adapter.Orchestrator.Data.Repositories;
 using AIPort.Adapter.Orchestrator.Domain.Abstractions;
 using AIPort.Adapter.Orchestrator.Domain.Models;
 using AIPort.Adapter.Orchestrator.Integrations.Interfaces;
+using AIPort.Adapter.Orchestrator.Config;
 using AIPort.Adapter.Orchestrator.Services;
 using AIPort.Adapter.Orchestrator.Services.Interfaces;
 using System.Collections.Generic;
+using System.Text.Json;
 
 namespace AIPort.Adapter.Orchestrator.Tests.Services;
 
@@ -20,6 +22,7 @@ public sealed class OrchestrationServiceSilenceGuardTests
         var tts = new Mock<ITextToSpeechService>();
         var intelligence = new Mock<IIntelligenceServiceClient>();
         var executor = new Mock<IDecisionExecutor>();
+        var agi = new Mock<IAsteriskCommandClient>();
         var eventService = new Mock<IEventService>();
         var voiceChannel = new Mock<IVoiceChannel>();
 
@@ -86,7 +89,9 @@ public sealed class OrchestrationServiceSilenceGuardTests
             tts.Object,
             intelligence.Object,
             executor.Object,
+            agi.Object,
             eventService.Object,
+            Options.Create(new FallbackRoutingOptions()),
             Mock.Of<ILogger<OrchestrationService>>());
 
         var call = new AgiCallContext
@@ -301,6 +306,183 @@ public sealed class OrchestrationServiceSilenceGuardTests
         Assert.DoesNotContain(insertedInteractions, interaction => interaction.BotPrompt == "Entendido, você está no bloco 12. Qual o número do apartamento?");
     }
 
+    [Fact]
+    public async Task HandleCallAsync_DatabaseOffline_RedirectsToCentralInsteadOfThrowing()
+    {
+        var tenantRepository = new Mock<ITenantRepository>();
+        var callSessionRepository = new Mock<ICallSessionRepository>();
+        var stt = new Mock<ISpeechToTextService>();
+        var tts = new Mock<ITextToSpeechService>();
+        var intelligence = new Mock<IIntelligenceServiceClient>();
+        var executor = new Mock<IDecisionExecutor>();
+        var agi = new Mock<IAsteriskCommandClient>();
+        var eventService = new Mock<IEventService>();
+        var voiceChannel = new Mock<IVoiceChannel>();
+
+        tenantRepository
+            .Setup(x => x.GetByPidAsync(200, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TimeoutException("database offline"));
+
+        tts
+            .Setup(x => x.SynthesizeAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("fallback.wav");
+
+        var sut = CreateSut(
+            tenantRepository,
+            callSessionRepository,
+            stt,
+            tts,
+            intelligence,
+            executor,
+            eventService,
+            agi,
+            new FallbackRoutingOptions { DatabaseOfflineExtension = "central" });
+
+        var call = CreateCall(voiceChannel.Object);
+
+        var result = await sut.HandleCallAsync(call, CancellationToken.None);
+
+        Assert.True(result.Sucesso);
+        Assert.Equal("ESCALAR_HUMANO", result.AcaoExecutada);
+        agi.Verify(x => x.TransferAsync(call, "central", It.IsAny<CancellationToken>()), Times.Once);
+        voiceChannel.Verify(x => x.PlayAsync("fallback.wav", It.IsAny<CancellationToken>()), Times.Once);
+        callSessionRepository.Verify(x => x.CreateSessionAsync(It.IsAny<CallSession>(), It.IsAny<CancellationToken>()), Times.Never);
+        executor.Verify(x => x.ExecuteAsync(It.IsAny<AgiCallContext>(), It.IsAny<Tenant>(), It.IsAny<InferenceResponseDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task HandleCallAsync_NonResidential_PersistsInitialInteraction_AndFinalWebhookPayload()
+    {
+        var tenantRepository = new Mock<ITenantRepository>();
+        var callSessionRepository = new Mock<ICallSessionRepository>();
+        var stt = new Mock<ISpeechToTextService>();
+        var tts = new Mock<ITextToSpeechService>();
+        var intelligence = new Mock<IIntelligenceServiceClient>();
+        var executor = new Mock<IDecisionExecutor>();
+        var eventService = new Mock<IEventService>();
+        var voiceChannel = new Mock<IVoiceChannel>();
+
+        var tenant = new Tenant
+        {
+            Id = 5,
+            Pid = 500,
+            NomeIdentificador = "Edificio Corporativo Atlas",
+            TipoLocal = "COMERCIAL",
+            SystemType = "corporate",
+            WebhookUrl = "https://cliente.local/webhook",
+            ApiToken = "token-123",
+            IsActive = true,
+            RecordingEnabled = true,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        tenantRepository
+            .Setup(x => x.GetByPidAsync(500, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(tenant);
+
+        intelligence
+            .Setup(x => x.GetTenantResponsesAsync("corporate", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TenantResponsesDto
+            {
+                Saudacao = "Bem-vindo à recepção virtual.",
+                SolicitarDocumento = "Informe seu nome e a empresa que deseja visitar."
+            });
+
+        voiceChannel
+            .Setup(x => x.RecordAsync(It.IsAny<string>(), 7000, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VoiceChannelResponse(200, 0, null, "OK"));
+
+        stt
+            .Setup(x => x.TranscribeAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("Sou João, visitante da empresa Atlas");
+
+        tts
+            .Setup(x => x.SynthesizeAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("dummy.wav");
+
+        intelligence
+            .Setup(x => x.ProcessAsync(It.IsAny<InferenceRequestDto>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new InferenceResponseDto
+            {
+                Intencao = "VISITA_COMERCIAL",
+                AcaoSugerida = "NOTIFICAR_MORADOR",
+                RespostaTexto = "Aguarde, vamos acionar o responsável.",
+                CamadaResolucao = "LLM_FULL",
+                Confianca = 0.94,
+                DadosExtraidos = new DadosExtraidosDto
+                {
+                    NomeVisitante = "João",
+                    Empresa = "Atlas",
+                    TemDadosExtraidos = true
+                }
+            });
+
+        callSessionRepository
+            .Setup(x => x.CreateSessionAsync(It.IsAny<CallSession>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var insertedInteractions = new List<CallInteraction>();
+        callSessionRepository
+            .Setup(x => x.InsertInteractionAsync(It.IsAny<CallInteraction>(), It.IsAny<CancellationToken>()))
+            .Callback<CallInteraction, CancellationToken>((interaction, _) => insertedInteractions.Add(interaction))
+            .ReturnsAsync(1L);
+
+        callSessionRepository
+            .Setup(x => x.GetNextInteractionOrderAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => insertedInteractions.Count + 1);
+
+        string? capturedFinalJson = null;
+        callSessionRepository
+            .Setup(x => x.CompleteSessionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, string, DateTime, CancellationToken>((_, _, finalJson, _, _) => capturedFinalJson = finalJson)
+            .Returns(Task.CompletedTask);
+
+        executor
+            .Setup(x => x.ExecuteAsync(It.IsAny<AgiCallContext>(), It.IsAny<Tenant>(), It.IsAny<InferenceResponseDto>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(("NOTIFICAR_MORADOR", "Aguarde, vamos acionar o responsável."));
+
+        var sut = CreateSut(tenantRepository, callSessionRepository, stt, tts, intelligence, executor, eventService);
+        var call = new AgiCallContext
+        {
+            SessionId = "corp-session-01",
+            UniqueId = "corp-session-01",
+            CallerId = "551199999999",
+            Channel = "PJSIP/551199999999-00000021",
+            TenantPid = 500,
+            VoiceChannel = voiceChannel.Object
+        };
+
+        var result = await sut.HandleCallAsync(call, CancellationToken.None);
+
+        Assert.True(result.Sucesso);
+        Assert.Equal("NOTIFICAR_MORADOR", result.AcaoExecutada);
+        Assert.Equal(2, insertedInteractions.Count);
+
+        var firstInteraction = insertedInteractions[0];
+        Assert.Contains("Bem-vindo à recepção virtual.", firstInteraction.BotPrompt);
+        Assert.Contains("Informe seu nome e a empresa que deseja visitar.", firstInteraction.BotPrompt);
+        Assert.Equal("Sou João, visitante da empresa Atlas", firstInteraction.UserTranscription);
+        Assert.Equal("LLM_FULL", firstInteraction.ResolutionLayer);
+        Assert.NotNull(firstInteraction.ExtractedDataJson);
+
+        var finalInteraction = insertedInteractions[1];
+        Assert.Contains("Atendimento encerrado", finalInteraction.BotPrompt);
+        Assert.NotNull(finalInteraction.ExtractedDataJson);
+
+        Assert.NotNull(capturedFinalJson);
+        using var finalDoc = JsonDocument.Parse(capturedFinalJson!);
+        Assert.Equal("NOTIFICAR_MORADOR", finalDoc.RootElement.GetProperty("acaoFinal").GetString());
+
+        var dispatch = finalDoc.RootElement.GetProperty("despachoFinal");
+        Assert.Equal("webhook", dispatch.GetProperty("tipo").GetString());
+        Assert.Equal("https://cliente.local/webhook", dispatch.GetProperty("destino").GetString());
+        Assert.True(dispatch.GetProperty("sucesso").GetBoolean());
+
+        var payload = dispatch.GetProperty("payload");
+        Assert.Equal("corp-session-01", payload.GetProperty("sessionId").GetString());
+        Assert.Equal("NOTIFICAR_MORADOR", payload.GetProperty("acao").GetString());
+    }
+
     private static Tenant CreateResidentialTenant()
     {
         return new Tenant
@@ -338,7 +520,9 @@ public sealed class OrchestrationServiceSilenceGuardTests
         Mock<ITextToSpeechService> tts,
         Mock<IIntelligenceServiceClient> intelligence,
         Mock<IDecisionExecutor> executor,
-        Mock<IEventService> eventService)
+        Mock<IEventService> eventService,
+        Mock<IAsteriskCommandClient>? agi = null,
+        FallbackRoutingOptions? fallbackRoutingOptions = null)
     {
         return new OrchestrationService(
             tenantRepository.Object,
@@ -347,7 +531,9 @@ public sealed class OrchestrationServiceSilenceGuardTests
             tts.Object,
             intelligence.Object,
             executor.Object,
+            (agi ?? new Mock<IAsteriskCommandClient>()).Object,
             eventService.Object,
+            Options.Create(fallbackRoutingOptions ?? new FallbackRoutingOptions()),
             Mock.Of<ILogger<OrchestrationService>>());
     }
 

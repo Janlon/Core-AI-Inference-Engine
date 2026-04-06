@@ -44,6 +44,8 @@ public static class OrchestratorEnvironmentOverrides
             ["Webhook:MaxRetryAttempts"] = Environment.GetEnvironmentVariable("AIPORT_WEBHOOK_MAX_RETRY_ATTEMPTS"),
             ["Webhook:RetryBaseDelayMs"] = Environment.GetEnvironmentVariable("AIPORT_WEBHOOK_RETRY_BASE_DELAY_MS"),
 
+            ["FallbackRouting:DatabaseOfflineExtension"] = Environment.GetEnvironmentVariable("AIPORT_FALLBACK_DATABASE_OFFLINE_EXTENSION"),
+
             ["Speech:TtsProvider"] = Environment.GetEnvironmentVariable("AIPORT_TTS_PROVIDER"),
             ["Speech:Asterisk:TtsApplication"] = Environment.GetEnvironmentVariable("AIPORT_ASTERISK_TTS_APP"),
             ["Speech:Google:CredentialsPath"] = Environment.GetEnvironmentVariable("AIPORT_GOOGLE_CREDENTIALS_PATH"),

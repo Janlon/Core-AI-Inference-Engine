@@ -1,13 +1,17 @@
+using System.Data.Common;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using AIPort.Adapter.Orchestrator.Agi;
+using AIPort.Adapter.Orchestrator.Config;
 using AIPort.Adapter.Orchestrator.Data.Entities;
 using AIPort.Adapter.Orchestrator.Data.Repositories;
 using AIPort.Adapter.Orchestrator.Domain.Models;
 using AIPort.Adapter.Orchestrator.Integrations.Interfaces;
 using AIPort.Adapter.Orchestrator.Services.Interfaces;
+using Microsoft.Extensions.Options;
 
 namespace AIPort.Adapter.Orchestrator.Services;
 
@@ -39,7 +43,9 @@ public sealed class OrchestrationService : IOrchestrationService
     private readonly ITextToSpeechService _tts;
     private readonly IIntelligenceServiceClient _intelligence;
     private readonly IDecisionExecutor _executor;
+    private readonly IAsteriskCommandClient _agi;
     private readonly IEventService _eventService;
+    private readonly FallbackRoutingOptions _fallbackRoutingOptions;
     private readonly ILogger<OrchestrationService> _logger;
 
     public OrchestrationService(
@@ -49,7 +55,9 @@ public sealed class OrchestrationService : IOrchestrationService
         ITextToSpeechService tts,
         IIntelligenceServiceClient intelligence,
         IDecisionExecutor executor,
+        IAsteriskCommandClient agi,
         IEventService eventService,
+        IOptions<FallbackRoutingOptions> fallbackRoutingOptions,
         ILogger<OrchestrationService> logger)
     {
         _tenantRepository = tenantRepository;
@@ -58,7 +66,9 @@ public sealed class OrchestrationService : IOrchestrationService
         _tts = tts;
         _intelligence = intelligence;
         _executor = executor;
+        _agi = agi;
         _eventService = eventService ?? throw new ArgumentNullException(nameof(eventService));
+        _fallbackRoutingOptions = fallbackRoutingOptions.Value;
         _logger = logger;
     }
 
@@ -69,8 +79,10 @@ public sealed class OrchestrationService : IOrchestrationService
         TenantResponsesDto? responses = null;
         InferenceResponseDto? iaResponse = null;
         CallSession? callSession = null;
+        VisitorInputCollectionResult? visitorInput = null;
         string? texto = null;
         string acaoExecutada = "NAO_EXECUTADO";
+        string respostaFalada = string.Empty;
 
         _logger.LogInformation(
             "Iniciando orquestração Session={SessionId} TenantPid={TenantPid} CallerId={CallerId} Channel={Channel}",
@@ -84,7 +96,15 @@ public sealed class OrchestrationService : IOrchestrationService
 
         try
         {
-            tenant = await _tenantRepository.GetByPidAsync(call.TenantPid, ct);
+            try
+            {
+                tenant = await _tenantRepository.GetByPidAsync(call.TenantPid, ct);
+            }
+            catch (Exception ex) when (IsDatabaseUnavailable(ex))
+            {
+                return await RedirectToCentralWhenDatabaseOfflineAsync(call, ex, ct);
+            }
+
             if (tenant is null)
             {
                 _logger.LogWarning(
@@ -145,7 +165,8 @@ public sealed class OrchestrationService : IOrchestrationService
                 responses = new TenantResponsesDto();
             }
 
-            texto = await CollectVisitorInputAsync(call, tenant, responses, ct);
+            visitorInput = await CollectVisitorInputAsync(call, tenant, responses, ct);
+            texto = visitorInput.Texto ?? string.Empty;
 
             if (!call.EscalateDueToSilence && call.VoiceChannel is not null)
             {
@@ -232,6 +253,8 @@ public sealed class OrchestrationService : IOrchestrationService
                 iaResponse = await _intelligence.ProcessAsync(iaRequest, ct);
             }
 
+            await RegisterCollectedInputInteractionIfNeededAsync(call, visitorInput, iaResponse, ct);
+
             (string AcaoExecutada, string RespostaFalada) execution;
             try
             {
@@ -257,6 +280,7 @@ public sealed class OrchestrationService : IOrchestrationService
             }
 
             acaoExecutada = execution.AcaoExecutada;
+            respostaFalada = execution.RespostaFalada;
 
             // Publica evento de conclusão bem-sucedida
             _eventService.PublishEvent(
@@ -275,7 +299,7 @@ public sealed class OrchestrationService : IOrchestrationService
             {
                 SessionId = call.SessionId,
                 AcaoExecutada = execution.AcaoExecutada,
-                RespostaFalada = execution.RespostaFalada,
+                RespostaFalada = respostaFalada,
                 Sucesso = true,
                 Intencao = iaResponse.Intencao,
                 CamadaResolucao = iaResponse.CamadaResolucao,
@@ -323,15 +347,9 @@ public sealed class OrchestrationService : IOrchestrationService
             {
                 try
                 {
-                    await RegisterFinalInteractionIfNeededAsync(call, iaResponse, acaoExecutada, ct);
+                    var finalExtractedData = BuildFinalAuditJson(call, tenant, iaResponse, acaoExecutada, respostaFalada);
 
-                    var finalExtractedData = iaResponse?.DadosExtraidos is null
-                        ? "{}"
-                        : JsonSerializer.Serialize(new
-                        {
-                            camadaResolucao = iaResponse.CamadaResolucao,
-                            dadosExtraidos = iaResponse.DadosExtraidos
-                        });
+                    await RegisterFinalInteractionIfNeededAsync(call, iaResponse, acaoExecutada, finalExtractedData, ct);
 
                     await _callSessionRepository.CompleteSessionAsync(
                         call.SessionId,
@@ -348,15 +366,94 @@ public sealed class OrchestrationService : IOrchestrationService
         }
     }
 
+    private async Task<CallOrchestrationResult> RedirectToCentralWhenDatabaseOfflineAsync(
+        AgiCallContext call,
+        Exception ex,
+        CancellationToken ct)
+    {
+        const string message = "Estamos com instabilidade no sistema. Seu atendimento sera redirecionado para a central.";
+        var targetExtension = _fallbackRoutingOptions.DatabaseOfflineExtension?.Trim();
+        var transferred = false;
+
+        _logger.LogWarning(ex,
+            "Base de dados indisponivel ao buscar tenant por PID={TenantPid}. Session={SessionId}. Aplicando fallback para central.",
+            call.TenantPid,
+            call.SessionId);
+
+        if (call.VoiceChannel is not null)
+        {
+            try
+            {
+                var fallbackFile = await _tts.SynthesizeAsync(message, ct);
+                await call.VoiceChannel.PlayAsync(fallbackFile, ct);
+            }
+            catch (Exception playbackEx)
+            {
+                _logger.LogWarning(playbackEx,
+                    "Falha ao reproduzir mensagem de fallback por banco offline. Session={SessionId}",
+                    call.SessionId);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(targetExtension))
+        {
+            try
+            {
+                await _agi.TransferAsync(call, targetExtension, ct);
+                transferred = true;
+            }
+            catch (Exception transferEx)
+            {
+                _logger.LogError(transferEx,
+                    "Falha ao transferir chamada para a central de fallback '{TargetExtension}'. Session={SessionId}",
+                    targetExtension,
+                    call.SessionId);
+            }
+        }
+        else
+        {
+            _logger.LogError(
+                "FallbackRouting:DatabaseOfflineExtension nao esta configurado. Session={SessionId}",
+                call.SessionId);
+        }
+
+        _eventService.PublishWarning(
+            $"Banco indisponivel durante roteamento da chamada {call.SessionId}. Fallback central acionado.",
+            "DATABASE_OFFLINE_FALLBACK");
+
+        return new CallOrchestrationResult
+        {
+            SessionId = call.SessionId,
+            AcaoExecutada = transferred ? "ESCALAR_HUMANO" : "ERRO_BANCO_DADOS",
+            RespostaFalada = message,
+            Sucesso = transferred,
+            MotivoFalha = transferred ? null : "Base de dados indisponivel e a transferencia para a central nao foi concluida."
+        };
+    }
+
+    private static bool IsDatabaseUnavailable(Exception ex)
+    {
+        for (var current = ex; current is not null; current = current.InnerException!)
+        {
+            if (current is DbException or TimeoutException or SocketException)
+                return true;
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// Reproduz a saudação e a solicitação de identificação do tenant, grava a fala do
     /// visitante e retorna a transcrição para processamento pela IA.
     /// </summary>
-    private async Task<string> CollectVisitorInputAsync(
+    private async Task<VisitorInputCollectionResult> CollectVisitorInputAsync(
         AgiCallContext call, Tenant tenant, TenantResponsesDto responses, CancellationToken ct)
     {
         if (call.VoiceChannel is null)
-            return await _stt.TranscribeAsync(call.AudioFilePath, call.PreTranscribedText, ct);
+        {
+            var transcribedText = await _stt.TranscribeAsync(call.AudioFilePath, call.PreTranscribedText, ct);
+            return new VisitorInputCollectionResult(transcribedText, null, 0, true);
+        }
 
         if (string.Equals(MapTenantType(tenant.TipoLocal), "residential", StringComparison.OrdinalIgnoreCase))
             return await CollectResidentialVisitorInputAsync(call, tenant, responses, ct);
@@ -371,6 +468,7 @@ public sealed class OrchestrationService : IOrchestrationService
         await call.VoiceChannel.PlayAsync(askFile, ct);
 
         // Grava a resposta do visitante (máx 7 s ou silêncio)
+        var interactionTimer = Stopwatch.StartNew();
         var safeUniqueId = call.UniqueId.Replace('.', '-');
         var basePath = Path.Combine("/tmp", $"agi-{safeUniqueId}-{Guid.NewGuid():N}");
         var record = await call.VoiceChannel.RecordAsync(basePath, maxTimeMs: 7000, ct);
@@ -378,12 +476,17 @@ public sealed class OrchestrationService : IOrchestrationService
         var transcript = await _stt.TranscribeAsync(basePath + ".wav", call.PreTranscribedText, ct);
         if (string.IsNullOrWhiteSpace(transcript) && record.DigitPressed is not null)
             transcript = $"DTMF:{record.DigitPressed}";
+        interactionTimer.Stop();
 
         call.AudioFilePath = basePath + ".wav";
-        return transcript;
+        return new VisitorInputCollectionResult(
+            transcript,
+            string.Join(Environment.NewLine, new[] { greetingMessage, responses.SolicitarDocumento }.Where(x => !string.IsNullOrWhiteSpace(x))),
+            interactionTimer.ElapsedMilliseconds,
+            false);
     }
 
-    private async Task<string> CollectResidentialVisitorInputAsync(
+    private async Task<VisitorInputCollectionResult> CollectResidentialVisitorInputAsync(
         AgiCallContext call,
         Tenant tenant,
         TenantResponsesDto responses,
@@ -528,14 +631,19 @@ public sealed class OrchestrationService : IOrchestrationService
                         call.SessionId, round, answer);
                 }
 
+            var promptToPersist = round == 0
+                ? string.Join(Environment.NewLine, new[] { greetingMessage, promptToUse ?? nextPrompt }.Where(x => !string.IsNullOrWhiteSpace(x)))
+                : promptToUse ?? nextPrompt;
+
             await _callSessionRepository.InsertInteractionAsync(
                 new CallInteraction
                 {
                     SessionId = call.SessionId,
                     InteractionOrder = round + 1,
-                    BotPrompt = promptToUse ?? nextPrompt,
+                    BotPrompt = promptToPersist,
                     UserTranscription = normalizedAnswer ?? answer ?? string.Empty,
                     ResolutionLayer = resolutionLayer,
+                    ExtractedDataJson = SerializeDataOrNull(BuildVisitContextSnapshot(context)),
                     InteractionDurationMs = capture.InteractionDurationMs,
                     LlmProcessingTimeMs = llmProcessingTimeMs,
                     CreatedAt = DateTime.UtcNow
@@ -546,20 +654,47 @@ public sealed class OrchestrationService : IOrchestrationService
         call.VisitContext = context;
         call.EscalateDueToSilence = !context.IsComplete && consecutiveSilentRounds >= maxConsecutiveSilentRounds;
 
-        return string.Join(Environment.NewLine, conversation.Where(text => !string.IsNullOrWhiteSpace(text)));
+        return new VisitorInputCollectionResult(
+            string.Join(Environment.NewLine, conversation.Where(text => !string.IsNullOrWhiteSpace(text))),
+            null,
+            0,
+            true);
+    }
+
+    private async Task RegisterCollectedInputInteractionIfNeededAsync(
+        AgiCallContext call,
+        VisitorInputCollectionResult visitorInput,
+        InferenceResponseDto iaResponse,
+        CancellationToken ct)
+    {
+        if (visitorInput.AlreadyPersisted || string.IsNullOrWhiteSpace(visitorInput.Prompt))
+            return;
+
+        var nextOrder = await _callSessionRepository.GetNextInteractionOrderAsync(call.SessionId, ct);
+        await _callSessionRepository.InsertInteractionAsync(
+            new CallInteraction
+            {
+                SessionId = call.SessionId,
+                InteractionOrder = nextOrder,
+                BotPrompt = visitorInput.Prompt,
+                UserTranscription = visitorInput.Texto ?? string.Empty,
+                ResolutionLayer = iaResponse.CamadaResolucao,
+                ExtractedDataJson = SerializeDataOrNull(iaResponse.DadosExtraidos),
+                InteractionDurationMs = visitorInput.InteractionDurationMs,
+                LlmProcessingTimeMs = 0,
+                CreatedAt = DateTime.UtcNow
+            },
+            ct);
     }
 
     private async Task RegisterFinalInteractionIfNeededAsync(
         AgiCallContext call,
         InferenceResponseDto? iaResponse,
         string acaoExecutada,
+        string finalAuditJson,
         CancellationToken ct)
     {
-        if (iaResponse is null)
-            return;
-
         var nextOrder = await _callSessionRepository.GetNextInteractionOrderAsync(call.SessionId, ct);
-        var extractedDataJson = JsonSerializer.Serialize(iaResponse.DadosExtraidos);
 
         await _callSessionRepository.InsertInteractionAsync(
             new CallInteraction
@@ -568,8 +703,8 @@ public sealed class OrchestrationService : IOrchestrationService
                 InteractionOrder = nextOrder,
                 BotPrompt = $"Atendimento encerrado. Ação final: {acaoExecutada}.",
                 UserTranscription = null,
-                ResolutionLayer = iaResponse.CamadaResolucao,
-                ExtractedDataJson = extractedDataJson,
+                ResolutionLayer = iaResponse?.CamadaResolucao,
+                ExtractedDataJson = finalAuditJson,
                 InteractionDurationMs = 0,
                 LlmProcessingTimeMs = 0,
                 CreatedAt = DateTime.UtcNow
@@ -599,6 +734,102 @@ public sealed class OrchestrationService : IOrchestrationService
     {
         var audioFile = await _tts.SynthesizeAsync(prompt, ct);
         await call.VoiceChannel!.PlayAsync(audioFile, ct);
+    }
+
+    private string BuildFinalAuditJson(
+        AgiCallContext call,
+        Tenant? tenant,
+        InferenceResponseDto? iaResponse,
+        string acaoExecutada,
+        string respostaFalada)
+    {
+        var webhookPayload = BuildWebhookPayload(call, tenant, iaResponse);
+        object? despachoFinal = null;
+
+        if (webhookPayload is not null)
+        {
+            despachoFinal = new
+            {
+                tipo = "webhook",
+                destino = tenant?.WebhookUrl,
+                sucesso = string.Equals(acaoExecutada, "NOTIFICAR_MORADOR", StringComparison.OrdinalIgnoreCase),
+                payload = webhookPayload
+            };
+        }
+        else if (string.Equals(acaoExecutada, "ESCALAR_HUMANO", StringComparison.OrdinalIgnoreCase))
+        {
+            despachoFinal = new
+            {
+                tipo = "central",
+                destino = tenant?.RamalTransfHumano,
+                origem = iaResponse?.AcaoSugerida
+            };
+        }
+        else if (string.Equals(acaoExecutada, "ABRIR_PORTAO", StringComparison.OrdinalIgnoreCase))
+        {
+            despachoFinal = new
+            {
+                tipo = "painel_acesso",
+                comando = "#9"
+            };
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            camadaResolucao = iaResponse?.CamadaResolucao,
+            dadosExtraidos = iaResponse?.DadosExtraidos,
+            acaoFinal = acaoExecutada,
+            respostaFalada,
+            despachoFinal
+        });
+    }
+
+    private static object? BuildWebhookPayload(AgiCallContext call, Tenant? tenant, InferenceResponseDto? iaResponse)
+    {
+        if (tenant is null || iaResponse is null)
+            return null;
+
+        if (!string.Equals(iaResponse.AcaoSugerida, "NOTIFICAR_MORADOR", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        return new
+        {
+            tenantId = tenant.Id,
+            tenantPid = tenant.Pid,
+            sessionId = call.SessionId,
+            uniqueId = call.UniqueId,
+            callerId = call.CallerId,
+            acao = iaResponse.AcaoSugerida,
+            resposta = iaResponse.RespostaTexto,
+            dados = iaResponse.DadosExtraidos
+        };
+    }
+
+    private static DadosExtraidosDto BuildVisitContextSnapshot(VisitContext context)
+    {
+        return new DadosExtraidosDto
+        {
+            NomeVisitante = context.VisitorName,
+            Nome = context.ResidentName,
+            Unidade = context.Apartment,
+            Bloco = context.Block,
+            Torre = context.Tower,
+            Documento = context.Document,
+            TemDadosExtraidos = !string.IsNullOrWhiteSpace(context.VisitorName)
+                || !string.IsNullOrWhiteSpace(context.ResidentName)
+                || !string.IsNullOrWhiteSpace(context.Apartment)
+                || !string.IsNullOrWhiteSpace(context.Block)
+                || !string.IsNullOrWhiteSpace(context.Tower)
+                || !string.IsNullOrWhiteSpace(context.Document)
+        };
+    }
+
+    private static string? SerializeDataOrNull<T>(T? value)
+    {
+        if (value is null)
+            return null;
+
+        return JsonSerializer.Serialize(value);
     }
 
     private static string FormatConversationTurn(int round, string? answer)
@@ -943,4 +1174,5 @@ public sealed class OrchestrationService : IOrchestrationService
     }
 
     private sealed record InteractionCaptureResult(string? Transcript, long InteractionDurationMs);
+    private sealed record VisitorInputCollectionResult(string? Texto, string? Prompt, long InteractionDurationMs, bool AlreadyPersisted);
 }

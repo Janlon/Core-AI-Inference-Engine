@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Encodings.Web;
 using AIPort.Adapter.Orchestrator.Config;
 using AIPort.Adapter.Orchestrator.Domain.Models;
 using AIPort.Adapter.Orchestrator.Services.Interfaces;
@@ -13,6 +14,11 @@ namespace AIPort.Adapter.Orchestrator.Services;
 
 public sealed class DeveloperSandboxHostedService : BackgroundService
 {
+    private static readonly JsonSerializerOptions SandboxJsonOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly RuntimeInputOptions _runtimeOptions;
     private readonly IHostApplicationLifetime _hostApplicationLifetime;
@@ -350,7 +356,7 @@ public sealed class DeveloperSandboxHostedService : BackgroundService
             $"[Decision] sucesso={result.Sucesso} camada={result.CamadaResolucao ?? "--"} intencao={result.Intencao ?? "--"} acao={result.AcaoExecutada} confianca={(result.Confianca.HasValue ? result.Confianca.Value.ToString("P0") : "--")}");
 
         if (result.DadosExtraidos is not null)
-            Console.WriteLine($"[Entities] {JsonSerializer.Serialize(result.DadosExtraidos)}");
+            Console.WriteLine($"[Entities] {JsonSerializer.Serialize(result.DadosExtraidos, SandboxJsonOptions)}");
 
         Console.WriteLine($"[Response] {result.RespostaFalada}");
 

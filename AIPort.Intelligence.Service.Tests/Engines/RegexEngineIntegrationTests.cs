@@ -21,8 +21,15 @@ public class RegexEngineIntegrationTests
     [InlineData("Quero falar com o Pedro na torre B.", "Pedro", null, null, "B", null, false, false)]
     [InlineData("Sou Ana, vim para a festa da família no bloco 3.", "Ana", null, "3", null, null, false, false)]
     [InlineData("Entregador, pedido para o apartamento 101.", null, "101", null, null, null, false, true)]
+    [InlineData("entrega", null, null, null, null, null, false, true)]
+    [InlineData("ifood", null, null, null, null, null, false, true)]
     [InlineData("Meu nome é Carlos, vim ver minha mãe no 402.", "Carlos", "402", null, null, null, false, false)]
     [InlineData("Olá, vim para manutenção no prédio.", null, null, null, null, null, false, false)]
+    [InlineData("ola", null, null, null, null, null, false, false)]
+    [InlineData("beleza", null, null, null, null, null, false, false)]
+    [InlineData("joia", null, null, null, null, null, false, false)]
+    [InlineData("baum", null, null, null, null, null, false, false)]
+    [InlineData("bão", null, null, null, null, null, false, false)]
     [InlineData("Sou o Rafael, preciso falar com o síndico.", "Rafael", null, null, null, null, false, false)]
     public async Task RegexEngine_ExtractsExpectedFields(
         string texto, string expectedNome, string expectedUnidade, string expectedBloco, string expectedTorre, string expectedEmpresa, bool expectedVeiculo, bool expectedEntregador)
@@ -38,6 +45,51 @@ public class RegexEngineIntegrationTests
         Assert.Equal(expectedEmpresa, dados.Empresa);
         Assert.Equal(expectedVeiculo, dados.EstaComVeiculo);
         Assert.Equal(expectedEntregador, dados.EEntregador);
+    }
+
+    [Fact]
+    public async Task RegexEngine_GreetingOnly_DoesNotExtractName()
+    {
+        var engine = CreateEngine();
+
+        var result = await engine.ProcessAsync("ola");
+
+        Assert.Equal(Domain.Enums.Intencao.Saudacao, result.Intencao);
+        Assert.Null(result.DadosExtraidos.Nome);
+        Assert.Null(result.DadosExtraidos.NomeVisitante);
+        Assert.DoesNotContain(result.Debug!.RegexMatches, match => match.Rule == "NomePattern");
+    }
+
+    [Theory]
+    [InlineData("beleza")]
+    [InlineData("joia")]
+    [InlineData("baum")]
+    [InlineData("bão")]
+    public async Task RegexEngine_ColloquialGreetingOnly_DoesNotExtractName(string texto)
+    {
+        var engine = CreateEngine();
+
+        var result = await engine.ProcessAsync(texto);
+
+        Assert.Equal(Domain.Enums.Intencao.Saudacao, result.Intencao);
+        Assert.Null(result.DadosExtraidos.Nome);
+        Assert.Null(result.DadosExtraidos.NomeVisitante);
+        Assert.DoesNotContain(result.Debug!.RegexMatches, match => match.Rule == "NomePattern");
+    }
+
+    [Theory]
+    [InlineData("entrega")]
+    [InlineData("ifood")]
+    public async Task RegexEngine_DeliveryKeywordOnly_DoesNotExtractName(string texto)
+    {
+        var engine = CreateEngine();
+
+        var result = await engine.ProcessAsync(texto);
+
+        Assert.Null(result.DadosExtraidos.Nome);
+        Assert.Null(result.DadosExtraidos.NomeVisitante);
+        Assert.True(result.DadosExtraidos.EEntregador);
+        Assert.DoesNotContain(result.Debug!.RegexMatches, match => match.Rule == "NomePattern");
     }
 
     [Fact]

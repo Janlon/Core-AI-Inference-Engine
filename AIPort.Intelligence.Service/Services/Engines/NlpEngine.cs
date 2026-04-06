@@ -35,11 +35,32 @@ public sealed partial class NlpEngine : INlpProcessor
 
     private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Boa", "Bom", "Oi", "Ola", "Dia", "Tarde", "Noite", "Sim", "Nao",
+        "Boa", "Bom", "Oi", "Ola", "Dia", "Tarde", "Noite", "Sim", "Nao", "Beleza", "Joia", "Baum", "Bao", "Bão",
         "Obrigado", "Obrigada", "Por", "Favor", "Gostaria", "Quero", "Preciso",
         "Estou", "Venho", "Sou", "Falar", "Visitar", "Ver", "Apartamento", "Sala",
         "Meu", "Minha", "Meus", "Minhas", "Nome", "Voce", "Seria", "Tenho",
         "Bloco", "Andar", "Piso", "Numero"
+    };
+
+    private static readonly HashSet<string> InvalidSingleWordNameCandidates = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "oi", "ola", "olá", "opa", "fala", "salve", "eai", "e", "aí", "ei", "beleza", "joia", "jóia", "baum", "bao", "bão",
+        "bom", "boa", "dia", "tarde", "noite", "obrigado", "obrigada", "sim", "nao", "não",
+        "entregador", "motoboy", "pedido", "entrega", "ifood"
+    };
+
+    private static readonly HashSet<string> NonNameTokens = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "oi", "ola", "olá", "opa", "fala", "salve", "eai", "e", "aí", "ei", "beleza", "joia", "jóia", "baum", "bao", "bão",
+        "bom", "boa", "dia", "tarde", "noite", "obrigado", "obrigada", "sim", "nao", "não",
+        "quero", "falar", "com", "visitar", "ver", "sou", "me", "chamo", "meu", "nome",
+        "aqui", "e", "é", "vim", "venho", "preciso", "para", "pra", "no", "na", "ao",
+        "o", "a", "os", "as", "um", "uma", "entregador", "motoboy", "pedido", "entrega", "ifood"
+    };
+
+    private static readonly HashSet<string> TrailingContextTokens = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "na", "no", "em", "para", "pra", "ao", "a", "o", "bloco", "torre", "apartamento", "apto", "unidade"
     };
 
     public NlpEngine(IOptions<AIServiceOptions> options, ILogger<NlpEngine> logger)
@@ -144,8 +165,12 @@ public sealed partial class NlpEngine : INlpProcessor
             var nomeAuto = NomeAutoDeclaradoPattern().Match(texto);
             if (nomeAuto.Success)
             {
-                nome = nomeAuto.Groups[1].Value.Trim();
-                extractions++;
+                var candidato = NormalizeNameCandidate(nomeAuto.Groups[1].Value);
+                if (IsValidPersonNameCandidate(candidato))
+                {
+                    nome = candidato;
+                    extractions++;
+                }
             }
         }
 
@@ -153,8 +178,10 @@ public sealed partial class NlpEngine : INlpProcessor
         {
             foreach (Match m in NomeProprio().Matches(texto))
             {
-                var candidato = m.Groups[1].Value.Trim();
-                if (!StopWords.Contains(candidato.Split(' ')[0]) && candidato.Split(' ').Length >= 2)
+                var candidato = NormalizeNameCandidate(m.Groups[1].Value);
+                if (!StopWords.Contains(candidato.Split(' ')[0])
+                    && candidato.Split(' ').Length >= 2
+                    && IsValidPersonNameCandidate(candidato))
                 {
                     nome = candidato;
                     extractions++;
@@ -169,8 +196,11 @@ public sealed partial class NlpEngine : INlpProcessor
             var palavras = texto.Trim().Split(' ');
             if (palavras.Length > 0)
             {
-                var primeira = palavras[0].Trim();
-                if (primeira.Length > 1 && char.IsUpper(primeira[0]) && primeira.All(char.IsLetter))
+                var primeira = NormalizeNameCandidate(palavras[0].Trim());
+                if (primeira.Length > 1
+                    && char.IsUpper(primeira[0])
+                    && primeira.All(char.IsLetter)
+                    && IsValidPersonNameCandidate(primeira))
                 {
                     nome = primeira;
                     extractions++;
@@ -184,8 +214,12 @@ public sealed partial class NlpEngine : INlpProcessor
             var match = Regex.Match(texto.Trim(), @"^([A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+(?:\s+[A-ZÁÉÍÓÚÀÂÊÔÇÃÕ][a-záéíóúàâêôçãõ]+)*)$", RegexOptions.IgnoreCase);
             if (match.Success)
             {
-                nome = match.Groups[1].Value.Trim();
-                extractions++;
+                var candidato = NormalizeNameCandidate(match.Groups[1].Value);
+                if (IsValidPersonNameCandidate(candidato))
+                {
+                    nome = candidato;
+                    extractions++;
+                }
             }
         }
 
@@ -317,6 +351,46 @@ public sealed partial class NlpEngine : INlpProcessor
     {
         var normalized = label.Trim().ToUpperInvariant();
         return normalized is "PER" or "PERSON" or "PESSOA";
+    }
+
+    private static bool IsValidPersonNameCandidate(string? candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+            return false;
+
+        var tokens = candidate
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(token => token.Trim(',', '.', ';', ':', '!', '?', '"', '\''))
+            .Where(token => token.Length > 0)
+            .ToArray();
+
+        if (tokens.Length == 0)
+            return false;
+
+        if (tokens.Length == 1 && InvalidSingleWordNameCandidates.Contains(tokens[0]))
+            return false;
+
+        if (tokens.All(token => NonNameTokens.Contains(token)))
+            return false;
+
+        return true;
+    }
+
+    private static string NormalizeNameCandidate(string? candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+            return string.Empty;
+
+        var tokens = candidate
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(token => token.Trim(',', '.', ';', ':', '!', '?', '"', '\''))
+            .Where(token => token.Length > 0)
+            .ToList();
+
+        while (tokens.Count > 0 && TrailingContextTokens.Contains(tokens[^1]))
+            tokens.RemoveAt(tokens.Count - 1);
+
+        return string.Join(' ', tokens);
     }
 
     private static bool IsOrganizationLabel(string label)

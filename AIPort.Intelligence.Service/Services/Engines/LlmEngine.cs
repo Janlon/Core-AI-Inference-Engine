@@ -394,6 +394,13 @@ public sealed class LlmEngine : ILlmProcessor
             camada = "LLM-Normalized";
         }
 
+        if (acao == AcaoSugerida.NOTIFICAR_MORADOR && !hasDocument)
+        {
+            acao = hasDestino ? AcaoSugerida.SOLICITAR_DOC : AcaoSugerida.SOLICITAR_IDENTIFICACAO;
+            confianca = Math.Min(confianca, 0.78);
+            camada = "LLM-Normalized";
+        }
+
         return (intencao, acao, confianca, camada);
     }
 
