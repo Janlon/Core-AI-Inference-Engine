@@ -8,10 +8,19 @@ CREATE TABLE IF NOT EXISTS CallSessions (
   StartedAt DATETIME NOT NULL,
   EndedAt DATETIME NULL,
   FinalAction VARCHAR(100) NULL,
+  FinalReasonCode VARCHAR(120) NULL,
+  FinalReasonCategory VARCHAR(60) NULL,
+  FinalReasonMessage TEXT NULL,
+  WebhookHttpStatus INT NULL,
+  WebhookPayloadHash CHAR(64) NULL,
+  WebhookPayloadSentAt DATETIME NULL,
+  WebhookCorrelationId VARCHAR(255) NULL,
+  WebhookCorrelationField VARCHAR(80) NULL,
   FinalExtractedData JSON NOT NULL,
   CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (SessionId),
   KEY IX_CallSessions_TenantId_StartedAt (TenantId, StartedAt),
+  KEY IX_CallSessions_FinalReasonCode_StartedAt (FinalReasonCode, StartedAt),
   CONSTRAINT FK_CallSessions_Tenants FOREIGN KEY (TenantId) REFERENCES Tenants(Id)
     ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB;

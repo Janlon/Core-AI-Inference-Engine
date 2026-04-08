@@ -29,4 +29,12 @@ public sealed class AgiCallContext
     /// para atendimento humano para evitar repetição indefinida de prompts.
     /// </summary>
     public bool EscalateDueToSilence { get; set; }
+
+    public NotificationCascadeResult? NotificationCascadeResult { get; set; }
+
+    public string? FinalReasonCode { get; set; }
+
+    public string? FinalReasonCategory { get; set; }
+
+    public string? FinalReasonMessage { get; set; }
 }

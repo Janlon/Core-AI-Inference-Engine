@@ -36,6 +36,22 @@ Retorna o status geral completo do serviço
   "service": "AIPort.Adapter.Orchestrator",
   "timestamp": "2026-03-17T10:30:45.1234567Z",
   "version": "1.0.0",
+  "system": {
+    "status": "healthy",
+    "platform": "linux",
+    "sampledAtUtc": "2026-04-08T10:30:45.1234567Z",
+    "logicalCores": 8,
+    "cpu": {
+      "usagePercent": 17.2
+    },
+    "memory": {
+      "totalBytes": 16777216000,
+      "usedBytes": 7340032000,
+      "availableBytes": 9437184000,
+      "usagePercent": 43.8
+    },
+    "message": "Telemetria coletada do host Linux via /proc."
+  },
   "database": {
     "status": "healthy",
     "timestamp": "2026-03-17T10:30:45.1234567Z"
@@ -43,6 +59,8 @@ Retorna o status geral completo do serviço
   "overall": "healthy"
 }
 ```
+
+No Linux, incluindo Debian 13, a telemetria de CPU e memoria e obtida de `/proc/stat` e `/proc/meminfo`.
 
 #### **GET /api/health/database**
 Verifica **especificamente a conexão com o banco de dados**

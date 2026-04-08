@@ -19,29 +19,55 @@ public sealed class NotificationCascadeService : INotificationCascadeService
         _logger = logger;
     }
 
-    public async Task<bool> NotifyAsync(AgiCallContext call, Tenant tenant, InferenceResponseDto iaResponse, CancellationToken ct = default)
+    public async Task<NotificationCascadeResult> NotifyAsync(AgiCallContext call, Tenant tenant, InferenceResponseDto iaResponse, CancellationToken ct = default)
     {
-        if (!string.IsNullOrWhiteSpace(tenant.WebhookUrl))
+        if (string.IsNullOrWhiteSpace(tenant.WebhookUrl))
         {
-            var ok = await _webhookClient.SendNotificationAsync(tenant.WebhookUrl, tenant.ApiToken, new
-            {
-                tenantId = tenant.Id,
-                tenantPid = tenant.Pid,
-                sessionId = call.SessionId,
-                uniqueId = call.UniqueId,
-                callerId = call.CallerId,
-                acao = iaResponse.AcaoSugerida,
-                resposta = iaResponse.RespostaTexto,
-                dados = iaResponse.DadosExtraidos
-            }, ct);
-
-            if (ok)
-                return true;
-
-            _logger.LogWarning("Webhook primário falhou para Tenant={TenantId}.", tenant.Id);
+            _logger.LogWarning("Tenant={TenantId} sem webhook configurado. Fallback para operador humano.", tenant.Id);
+            return new NotificationCascadeResult(
+                Success: false,
+                ReasonCode: "WEBHOOK_NOT_CONFIGURED",
+                ReasonCategory: "configuration",
+                ReasonMessage: "Tenant sem webhook configurado para notificar o morador.",
+                Webhook: null,
+                RedirectToHumanRecommended: true);
         }
 
-        _logger.LogWarning("Sem webhook válido ou falha no envio. Fallback para operador humano configurado.");
-        return false;
+        var webhook = await _webhookClient.SendNotificationAsync(tenant.WebhookUrl, tenant.ApiToken, new
+        {
+            tenantId = tenant.Id,
+            tenantPid = tenant.Pid,
+            sessionId = call.SessionId,
+            uniqueId = call.UniqueId,
+            callerId = call.CallerId,
+            acao = iaResponse.AcaoSugerida,
+            resposta = iaResponse.RespostaTexto,
+            dados = iaResponse.DadosExtraidos
+        }, ct);
+
+        if (webhook.Success)
+        {
+            return new NotificationCascadeResult(
+                Success: true,
+                ReasonCode: "MORADOR_NOTIFICADO",
+                ReasonCategory: "success",
+                ReasonMessage: "Morador notificado com sucesso via webhook.",
+                Webhook: webhook,
+                RedirectToHumanRecommended: false);
+        }
+
+        _logger.LogWarning(
+            "Webhook primário falhou para Tenant={TenantId}. Code={Code} HttpStatus={HttpStatusCode}",
+            tenant.Id,
+            webhook.Code,
+            webhook.HttpStatusCode);
+
+        return new NotificationCascadeResult(
+            Success: false,
+            ReasonCode: webhook.Code,
+            ReasonCategory: webhook.Category,
+            ReasonMessage: webhook.Message,
+            Webhook: webhook,
+            RedirectToHumanRecommended: true);
     }
 }

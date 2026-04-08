@@ -43,7 +43,10 @@ builder.Services.AddScoped<ITenantRepository, TenantRepository>();
 builder.Services.AddScoped<ICallSessionRepository, CallSessionRepository>();
 
 builder.Services.AddScoped<SpeechToTextService>();
-builder.Services.AddScoped<ITextToSpeechService, TextToSpeechService>();
+builder.Services.AddSingleton<SpeechWarmupStatusTracker>();
+builder.Services.AddSingleton<ISpeechWarmupStatusProvider>(sp => sp.GetRequiredService<SpeechWarmupStatusTracker>());
+builder.Services.AddSingleton<TextToSpeechService>();
+builder.Services.AddSingleton<ITextToSpeechService>(sp => sp.GetRequiredService<TextToSpeechService>());
 builder.Services.AddScoped<GoogleCloudStreamingSttService>();
 builder.Services.AddScoped<ISpeechToTextService>(sp =>
 {
@@ -59,7 +62,9 @@ builder.Services.AddScoped<IDecisionExecutor, DecisionExecutor>();
 builder.Services.AddScoped<INotificationCascadeService, NotificationCascadeService>();
 builder.Services.AddScoped<IOrchestrationService, OrchestrationService>();
 builder.Services.AddScoped<IAgiCallHandler, AgiCallHandler>();
+builder.Services.AddSingleton<ISystemTelemetryProvider, SystemTelemetryProvider>();
 builder.Services.AddScoped<IHealthCheckService, HealthCheckService>();
+builder.Services.AddHostedService<SpeechWarmupHostedService>();
 
 if (useDeveloperSandbox)
 {

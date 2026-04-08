@@ -448,6 +448,8 @@ public class EventsController : ControllerBase
                 }
 
                 var finalResolutionLayer = ExtractFinalResolutionLayer(row.FinalExtractedData);
+                var finalReason = ExtractFinalReason(row.FinalExtractedData);
+                var finalNotification = ExtractFinalNotification(row.FinalExtractedData);
 
                 return new
                 {
@@ -461,6 +463,10 @@ public class EventsController : ControllerBase
                     endedAt = row.EndedAt,
                     finalAction = row.FinalAction,
                     finalResolutionLayer,
+                    finalReasonCode = finalReason.Code,
+                    finalReasonCategory = finalReason.Category,
+                    finalReasonMessage = finalReason.Message,
+                    finalNotification,
                     interactionCount = row.InteractionCount,
                     totalInteractionDurationMs = row.TotalInteractionDurationMs,
                     totalLlmProcessingTimeMs = row.TotalLlmProcessingTimeMs,
@@ -659,6 +665,100 @@ public class EventsController : ControllerBase
 
         return null;
     }
+
+    private static (string? Code, string? Category, string? Message) ExtractFinalReason(string? finalExtractedData)
+    {
+        if (string.IsNullOrWhiteSpace(finalExtractedData) || finalExtractedData == "{}")
+            return (null, null, null);
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(finalExtractedData);
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+                return (null, null, null);
+
+            if (!doc.RootElement.TryGetProperty("motivoFinal", out var reasonNode) || reasonNode.ValueKind != System.Text.Json.JsonValueKind.Object)
+                return (null, null, null);
+
+            return (
+                GetStringProperty(reasonNode, "code"),
+                GetStringProperty(reasonNode, "category"),
+                GetStringProperty(reasonNode, "message"));
+        }
+        catch
+        {
+            return (null, null, null);
+        }
+    }
+
+    private static object? ExtractFinalNotification(string? finalExtractedData)
+    {
+        if (string.IsNullOrWhiteSpace(finalExtractedData) || finalExtractedData == "{}")
+            return null;
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(finalExtractedData);
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+                return null;
+
+            if (!doc.RootElement.TryGetProperty("notificacao", out var notificationNode) || notificationNode.ValueKind != System.Text.Json.JsonValueKind.Object)
+                return null;
+
+            System.Text.Json.JsonElement? webhookNode = null;
+            if (notificationNode.TryGetProperty("webhook", out var webhook) && webhook.ValueKind == System.Text.Json.JsonValueKind.Object)
+                webhookNode = webhook;
+
+            return new
+            {
+                success = GetBooleanProperty(notificationNode, "success"),
+                reasonCode = GetStringProperty(notificationNode, "reasonCode"),
+                reasonCategory = GetStringProperty(notificationNode, "reasonCategory"),
+                reasonMessage = GetStringProperty(notificationNode, "reasonMessage"),
+                redirectToHumanRecommended = GetBooleanProperty(notificationNode, "redirectToHumanRecommended"),
+                webhook = webhookNode is null
+                    ? null
+                    : new
+                    {
+                        success = GetBooleanProperty(webhookNode.Value, "success"),
+                        code = GetStringProperty(webhookNode.Value, "code"),
+                        category = GetStringProperty(webhookNode.Value, "category"),
+                        message = GetStringProperty(webhookNode.Value, "message"),
+                        httpStatusCode = GetIntProperty(webhookNode.Value, "httpStatusCode"),
+                        responseBodyExcerpt = GetStringProperty(webhookNode.Value, "responseBodyExcerpt"),
+                        elapsedMs = GetLongProperty(webhookNode.Value, "elapsedMs"),
+                        payloadHash = GetStringProperty(webhookNode.Value, "payloadHash"),
+                        payloadSentAtUtc = GetStringProperty(webhookNode.Value, "payloadSentAtUtc"),
+                        correlationId = GetStringProperty(webhookNode.Value, "correlationId"),
+                        correlationField = GetStringProperty(webhookNode.Value, "correlationField")
+                    }
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? GetStringProperty(System.Text.Json.JsonElement element, string name)
+        => element.TryGetProperty(name, out var property) && property.ValueKind == System.Text.Json.JsonValueKind.String
+            ? property.GetString()
+            : null;
+
+    private static bool? GetBooleanProperty(System.Text.Json.JsonElement element, string name)
+        => element.TryGetProperty(name, out var property) && (property.ValueKind == System.Text.Json.JsonValueKind.True || property.ValueKind == System.Text.Json.JsonValueKind.False)
+            ? property.GetBoolean()
+            : null;
+
+    private static int? GetIntProperty(System.Text.Json.JsonElement element, string name)
+        => element.TryGetProperty(name, out var property) && property.TryGetInt32(out var value)
+            ? value
+            : null;
+
+    private static long? GetLongProperty(System.Text.Json.JsonElement element, string name)
+        => element.TryGetProperty(name, out var property) && property.TryGetInt64(out var value)
+            ? value
+            : null;
 }
 
 /// <summary>

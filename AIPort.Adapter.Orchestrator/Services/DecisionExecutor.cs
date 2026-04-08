@@ -33,8 +33,13 @@ public sealed class DecisionExecutor : IDecisionExecutor
         switch (acao)
         {
             case "NOTIFICAR_MORADOR":
-                var notified = await _cascade.NotifyAsync(call, tenant, iaResponse, ct);
-                if (notified)
+                var notificationResult = await _cascade.NotifyAsync(call, tenant, iaResponse, ct);
+                call.NotificationCascadeResult = notificationResult;
+                call.FinalReasonCode = notificationResult.ReasonCode;
+                call.FinalReasonCategory = notificationResult.ReasonCategory;
+                call.FinalReasonMessage = notificationResult.ReasonMessage;
+
+                if (notificationResult.Success)
                 {
                     if (call.VoiceChannel is not null)
                     {
@@ -45,7 +50,13 @@ public sealed class DecisionExecutor : IDecisionExecutor
                     return ("NOTIFICAR_MORADOR", "Aguarde, estamos notificando o morador.");
                 }
 
-                return await RedirectToCentralAsync(call, tenant, ct);
+                return await RedirectToCentralAsync(
+                    call,
+                    tenant,
+                    notificationResult.ReasonCode,
+                    notificationResult.ReasonCategory,
+                    notificationResult.ReasonMessage,
+                    ct);
 
             case "ABRIR_PORTAO":
             case "LIBERAR_ACESSO":
@@ -64,7 +75,10 @@ public sealed class DecisionExecutor : IDecisionExecutor
                 return (acao, resposta);
 
             case "ESCALAR_HUMANO":
-                return await RedirectToCentralAsync(call, tenant, ct);
+                call.FinalReasonCode ??= "IA_ESCALOU_HUMANO";
+                call.FinalReasonCategory ??= "decision";
+                call.FinalReasonMessage ??= "A IA decidiu redirecionar o atendimento para a central humana.";
+                return await RedirectToCentralAsync(call, tenant, null, null, null, ct);
 
             default:
                 if (call.VoiceChannel is not null)
@@ -79,9 +93,16 @@ public sealed class DecisionExecutor : IDecisionExecutor
     private async Task<(string AcaoExecutada, string RespostaFalada)> RedirectToCentralAsync(
         AgiCallContext call,
         Tenant tenant,
+        string? reasonCode,
+        string? reasonCategory,
+        string? reasonMessage,
         CancellationToken ct)
     {
         const string message = "Aguarde. Não obtivemos resposta automática e seu atendimento será redirecionado para a central.";
+
+        call.FinalReasonCode ??= reasonCode ?? "ESCALADO_PARA_CENTRAL";
+        call.FinalReasonCategory ??= reasonCategory ?? "fallback";
+        call.FinalReasonMessage ??= reasonMessage ?? "Atendimento redirecionado para a central humana.";
 
         if (call.VoiceChannel is not null)
         {

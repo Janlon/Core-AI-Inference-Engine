@@ -49,6 +49,154 @@ function prettyMs(value) {
   return `${Math.round(Number(value))} ms`
 }
 
+function prettyDateTime(value) {
+  if (!value) return '--'
+  return new Date(value).toLocaleString()
+}
+
+function buildFinalSummaryText(session) {
+  const finalActionLabel = session.finalAction ?? 'CHAMADA_ENCERRADA'
+  const finalReasonMessage = session.finalReasonMessage ? ` Motivo: ${session.finalReasonMessage}` : ''
+  const webhook = session.finalNotification?.webhook
+  const webhookDetail = webhook?.httpStatusCode != null
+    ? ` HTTP ${webhook.httpStatusCode}.`
+    : webhook?.elapsedMs != null
+      ? ` Tempo webhook: ${prettyMs(webhook.elapsedMs)}.`
+      : ''
+
+  return `Atendimento encerrado. Ação final: ${finalActionLabel}.${finalReasonMessage}${webhookDetail}`.trim()
+}
+
+function prettyPercent(value) {
+  if (value == null || Number.isNaN(Number(value))) return '--'
+  return `${Number(value).toFixed(1)}%`
+}
+
+function prettyBytes(value) {
+  if (value == null || Number.isNaN(Number(value))) return '--'
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let size = Number(value)
+  let unitIndex = 0
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024
+    unitIndex += 1
+  }
+
+  const decimals = size >= 10 || unitIndex === 0 ? 0 : 1
+  return `${size.toFixed(decimals)} ${units[unitIndex]}`
+}
+
+function resourceStatus(usagePercent, fallbackStatus = 'unknown') {
+  if (usagePercent == null || Number.isNaN(Number(usagePercent))) return fallbackStatus
+  if (Number(usagePercent) >= 90) return 'degraded'
+  return 'healthy'
+}
+
+function TelemetryChart({ title, valueLabel, subtitle, series, strokeClass, fillClass }) {
+  const width = 640
+  const height = 220
+  const paddingX = 18
+  const paddingTop = 20
+  const paddingBottom = 28
+  const plotHeight = height - paddingTop - paddingBottom
+  const plotWidth = width - paddingX * 2
+  const validPoints = series.filter((item) => item.value != null && !Number.isNaN(Number(item.value)))
+
+  const points = validPoints.map((item, index) => {
+    const safeValue = Math.max(0, Math.min(100, Number(item.value)))
+    const x = validPoints.length <= 1
+      ? width / 2
+      : paddingX + (index / (validPoints.length - 1)) * plotWidth
+    const y = paddingTop + ((100 - safeValue) / 100) * plotHeight
+
+    return {
+      ...item,
+      x,
+      y,
+      safeValue,
+    }
+  })
+
+  const linePath = points
+    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`)
+    .join(' ')
+
+  const areaPath = points.length > 0
+    ? `${linePath} L ${points[points.length - 1].x.toFixed(1)} ${(height - paddingBottom).toFixed(1)} L ${points[0].x.toFixed(1)} ${(height - paddingBottom).toFixed(1)} Z`
+    : ''
+
+  const latestPoint = points[points.length - 1] ?? null
+  const minValue = points.length > 0 ? Math.min(...points.map((point) => point.safeValue)) : null
+  const maxValue = points.length > 0 ? Math.max(...points.map((point) => point.safeValue)) : null
+  const xLabels = [points[0], points[Math.floor((points.length - 1) / 2)], points[points.length - 1]].filter(Boolean)
+
+  return (
+    <article className="glass-card overflow-hidden">
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Telemetria</p>
+          <h3 className="mt-1 text-lg font-semibold text-slate-100">{title}</h3>
+          <p className="mt-1 text-xs text-slate-400">{subtitle}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-2xl font-semibold text-slate-100">{valueLabel}</p>
+          <p className="mt-1 text-xs text-slate-500">Janela local com {series.length} amostras</p>
+        </div>
+      </div>
+
+      {points.length === 0 ? (
+        <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 text-sm text-slate-500">
+          Aguardando amostras suficientes para desenhar o grafico.
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-3">
+          <svg viewBox={`0 0 ${width} ${height}`} className="h-56 w-full" preserveAspectRatio="none" role="img" aria-label={title}>
+            {[0, 25, 50, 75, 100].map((tick) => {
+              const y = paddingTop + ((100 - tick) / 100) * plotHeight
+              return (
+                <g key={tick}>
+                  <line x1={paddingX} y1={y} x2={width - paddingX} y2={y} className="stroke-slate-800" strokeWidth="1" strokeDasharray="3 6" />
+                  <text x={paddingX} y={y - 4} className="fill-slate-600 text-[10px]">{tick}%</text>
+                </g>
+              )
+            })}
+
+            {areaPath && <path d={areaPath} className={fillClass} />}
+            {linePath && <path d={linePath} className={strokeClass} fill="none" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />}
+
+            {points.map((point) => (
+              <circle key={point.id} cx={point.x} cy={point.y} r="3.5" className={strokeClass} />
+            ))}
+
+            {xLabels.map((point) => (
+              <text key={`${point.id}-label`} x={point.x} y={height - 8} textAnchor="middle" className="fill-slate-500 text-[10px]">
+                {new Date(point.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </text>
+            ))}
+          </svg>
+
+          <div className="mt-4 grid grid-cols-3 gap-3 text-xs text-slate-400">
+            <div className="rounded-xl border border-slate-800 bg-slate-900/50 px-3 py-2">
+              <p className="text-slate-500">Atual</p>
+              <p className="mt-1 font-semibold text-slate-100">{latestPoint ? prettyPercent(latestPoint.safeValue) : '--'}</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/50 px-3 py-2">
+              <p className="text-slate-500">Min</p>
+              <p className="mt-1 font-semibold text-slate-100">{minValue == null ? '--' : prettyPercent(minValue)}</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/50 px-3 py-2">
+              <p className="text-slate-500">Max</p>
+              <p className="mt-1 font-semibold text-slate-100">{maxValue == null ? '--' : prettyPercent(maxValue)}</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </article>
+  )
+}
+
 function toUtcIsoFromLocalInput(localValue, inclusiveEnd = false) {
   if (!localValue) return null
 
@@ -196,7 +344,8 @@ function useLiveEventsSSE() {
   return { events, isConnected }
 }
 
-function HealthCard({ title, status, detail, icon: Icon }) {
+function HealthCard({ title, status, detail, icon }) {
+  const IconComponent = icon
   const tone = statusTone(status)
   const toneClass = tone === 'ok' ? 'bg-emerald-500' : tone === 'warn' ? 'bg-amber-500' : 'bg-rose-500'
   return (
@@ -206,7 +355,7 @@ function HealthCard({ title, status, detail, icon: Icon }) {
           <p className="text-sm text-slate-400">{title}</p>
           <p className="mt-1 text-lg font-semibold capitalize text-slate-100">{formatStatus(status)}</p>
         </div>
-        <Icon className="h-5 w-5 text-cyan-300" />
+        <IconComponent className="h-5 w-5 text-cyan-300" />
       </div>
       <div className="mt-3 flex items-center gap-2 text-sm text-slate-400">
         <span className={`h-2.5 w-2.5 rounded-full ${toneClass}`} />
@@ -286,8 +435,8 @@ function ConversationCard({ session }) {
       : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
 
   const endedAtLabel = session.endedAt ? new Date(session.endedAt).toLocaleString() : null
-  const finalActionLabel = session.finalAction ?? 'CHAMADA_ENCERRADA'
   const finalLayerLabel = session.finalResolutionLayer ?? 'N/D'
+  const finalReasonLabel = session.finalReasonMessage ?? session.finalReasonCode ?? 'N/D'
   const hasClosingMessage = Boolean(session.endedAt || session.finalAction)
 
   const sortedMessages = [...(session.messages ?? [])]
@@ -308,7 +457,7 @@ function ConversationCard({ session }) {
     ? [...sortedMessages, {
       id: `${session.sessionId}-final-summary`,
       role: 'assistant',
-      text: `Atendimento encerrado. Ação final: ${finalActionLabel}.`,
+      text: buildFinalSummaryText(session),
       at: session.endedAt ?? session.lastInteractionAt ?? session.startedAt,
       metrics: {
         resolutionLayer: session.finalResolutionLayer,
@@ -332,6 +481,7 @@ function ConversationCard({ session }) {
               <span>Caller: {session.callerId ?? '--'}</span>
               <span>Interações: {session.interactionCount}</span>
               <span className="rounded-full border border-slate-700 px-2 py-0.5 text-slate-300">Extração final: {finalLayerLabel}</span>
+              <span className="rounded-full border border-amber-700/40 bg-amber-950/20 px-2 py-0.5 text-amber-200">Motivo final: {finalReasonLabel}</span>
               <span className={`rounded-full border px-2 py-0.5 ${loopTone}`}>Loop: {telemetry.loopRisk ?? 'low'}</span>
             </div>
             <div className="flex items-center gap-2">
@@ -415,7 +565,24 @@ function ConversationCard({ session }) {
             <span>Sessão: {session.sessionId}</span>
             <span>Tempo interação: {prettyMs(session.totalInteractionDurationMs)}</span>
             <span>Tempo IA: {prettyMs(session.totalLlmProcessingTimeMs)}</span>
+            {session.finalNotification?.webhook?.httpStatusCode != null && <span>HTTP webhook: {session.finalNotification.webhook.httpStatusCode}</span>}
+            {session.finalNotification?.webhook?.elapsedMs != null && <span>Tempo webhook: {prettyMs(session.finalNotification.webhook.elapsedMs)}</span>}
+            {session.finalNotification?.webhook?.payloadSentAtUtc && <span>Envio webhook: {prettyDateTime(session.finalNotification.webhook.payloadSentAtUtc)}</span>}
+            {session.finalNotification?.webhook?.correlationId && <span>Correlação externa: {session.finalNotification.webhook.correlationId}</span>}
           </footer>
+          {session.finalNotification?.webhook?.responseBodyExcerpt && (
+            <div className="mt-2 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-[11px] text-slate-400">
+              <p className="text-slate-500">Retorno do webhook</p>
+              <p className="mt-1 whitespace-pre-wrap break-words">{session.finalNotification.webhook.responseBodyExcerpt}</p>
+            </div>
+          )}
+          {(session.finalNotification?.webhook?.payloadHash || session.finalNotification?.webhook?.correlationField) && (
+            <div className="mt-2 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-[11px] text-slate-400">
+              <p className="text-slate-500">Prova de entrega</p>
+              {session.finalNotification?.webhook?.payloadHash && <p className="mt-1 break-all">Hash payload: {session.finalNotification.webhook.payloadHash}</p>}
+              {session.finalNotification?.webhook?.correlationField && <p className="mt-1">Campo de correlação: {session.finalNotification.webhook.correlationField}</p>}
+            </div>
+          )}
         </>
       )}
     </article>
@@ -426,6 +593,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('health')
   const [showClientForm, setShowClientForm] = useState(false)
   const [editingClient, setEditingClient] = useState(null)
+  const [telemetryHistory, setTelemetryHistory] = useState([])
   const [formData, setFormData] = useState({
     pid: '',
     nomeIdentificador: '',
@@ -460,9 +628,38 @@ function App() {
   const health = healthQuery.data ?? {}
   const dbHealth = health.database ?? {}
   const aiHealth = health.ai ?? {}
+  const speechHealth = health.speech ?? {}
   const asteriskHealth = health.asterisk ?? {}
+  const systemHealth = health.system ?? {}
+  const cpuHealth = systemHealth.cpu ?? {}
+  const memoryHealth = systemHealth.memory ?? {}
   const activeCalls = health.activeCalls ?? asteriskHealth.activeCalls ?? 0
   const latencyMs = aiHealth.latencyMs ?? null
+  const cpuUsagePercent = cpuHealth.usagePercent ?? null
+  const memoryUsagePercent = memoryHealth.usagePercent ?? null
+
+  useEffect(() => {
+    if (!systemHealth.sampledAtUtc) return
+
+    setTelemetryHistory((prev) => {
+      const sampleId = String(systemHealth.sampledAtUtc)
+      if (prev.some((item) => item.id === sampleId)) {
+        return prev
+      }
+
+      const next = [
+        ...prev,
+        {
+          id: sampleId,
+          at: systemHealth.sampledAtUtc,
+          cpuUsagePercent,
+          memoryUsagePercent,
+        },
+      ]
+
+      return next.slice(-24)
+    })
+  }, [cpuUsagePercent, memoryUsagePercent, systemHealth.sampledAtUtc])
 
   const mergedEvents = useMemo(() => {
     const all = [...sseEvents, ...(recentEventsQuery.data ?? [])]
@@ -662,8 +859,11 @@ function App() {
       { label: 'Overall', value: formatStatus(health.overall), icon: ShieldCheck },
       { label: 'Chamadas Ativas', value: String(activeCalls), icon: PhoneCall },
       { label: 'Latencia IA', value: prettyMs(latencyMs), icon: Activity },
+      { label: 'Voz/TTS', value: formatStatus(speechHealth.status), icon: HeartPulse },
+      { label: 'CPU Host', value: prettyPercent(cpuUsagePercent), icon: Server },
+      { label: 'Memoria Host', value: prettyPercent(memoryUsagePercent), icon: Database },
     ],
-    [activeCalls, health.overall, latencyMs],
+    [activeCalls, cpuUsagePercent, health.overall, latencyMs, memoryUsagePercent, speechHealth.status],
   )
 
   return (
@@ -675,7 +875,7 @@ function App() {
           <p className="mt-2 text-sm text-slate-400">Monitoramento de saude, configuracoes de dominios e eventos em tempo real.</p>
         </header>
 
-        <section className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <section className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
           {topSummary.map((item) => (
             <article key={item.label} className="glass-card flex items-center justify-between">
               <div>
@@ -689,7 +889,7 @@ function App() {
 
         {activeTab === 'health' && (
           <main className="space-y-5">
-            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
               <HealthCard
                 title="Asterisk"
                 status={asteriskHealth.status}
@@ -714,14 +914,56 @@ function App() {
                 detail={`Latencia probe IA: ${prettyMs(latencyMs)}`}
                 icon={Network}
               />
+              <HealthCard
+                title="Voz / TTS"
+                status={speechHealth.status}
+                detail={`${speechHealth.provider ?? '--'} • ${speechHealth.ready ? 'pronto' : 'nao pronto'}`}
+                icon={HeartPulse}
+              />
+              <HealthCard
+                title="CPU Host"
+                status={resourceStatus(cpuUsagePercent, systemHealth.status)}
+                detail={`${prettyPercent(cpuUsagePercent)} de uso • ${systemHealth.logicalCores ?? '--'} cores`}
+                icon={Activity}
+              />
+              <HealthCard
+                title="Memoria Host"
+                status={resourceStatus(memoryUsagePercent, systemHealth.status)}
+                detail={`${prettyBytes(memoryHealth.usedBytes)} / ${prettyBytes(memoryHealth.totalBytes)}`}
+                icon={Database}
+              />
             </section>
 
             <section className="glass-card">
               <p className="text-sm text-slate-400">Atualizacao automatica</p>
               <p className="mt-1 text-sm text-slate-200">O health check e consultado a cada 30 segundos em <span className="font-mono text-cyan-300">/api/health</span>.</p>
-              <p className="mt-2 text-xs text-slate-400">CPU e memoria nao sao exibidos porque o backend ainda nao fornece telemetria real dessas metricas.</p>
+              <p className="mt-2 text-xs text-slate-400">Em Linux, incluindo Debian 13, CPU e memoria sao lidos do host via /proc/stat e /proc/meminfo.</p>
+              <p className="mt-1 text-xs text-slate-500">Ultima amostra: {systemHealth.sampledAtUtc ? new Date(systemHealth.sampledAtUtc).toLocaleString() : '--'}.</p>
+              <p className="mt-1 text-xs text-slate-500">Voz: {speechHealth.ready ? 'pronta para atender' : 'ainda aquecendo'} desde {prettyDateTime(speechHealth.lastWarmupAtUtc)}.</p>
+              {speechHealth.lastWarmupElapsedMs != null && <p className="mt-1 text-xs text-slate-500">Warmup TTS: {prettyMs(speechHealth.lastWarmupElapsedMs)}.</p>}
+              {speechHealth.message && <p className="mt-1 text-xs text-slate-500">{speechHealth.message}</p>}
+              {systemHealth.message && <p className="mt-1 text-xs text-slate-500">{systemHealth.message}</p>}
               {healthQuery.isFetching && <p className="mt-2 text-xs text-cyan-300">Atualizando status...</p>}
               {healthQuery.isError && <p className="mt-2 text-xs text-rose-300">Nao foi possivel consultar o backend agora.</p>}
+            </section>
+
+            <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <TelemetryChart
+                title="CPU em tempo real"
+                valueLabel={prettyPercent(cpuUsagePercent)}
+                subtitle="Historico local alimentado a cada refresh do health check"
+                series={telemetryHistory.map((item) => ({ id: `${item.id}-cpu`, at: item.at, value: item.cpuUsagePercent }))}
+                strokeClass="stroke-cyan-400 fill-cyan-400"
+                fillClass="fill-cyan-500/15"
+              />
+              <TelemetryChart
+                title="Memoria em tempo real"
+                valueLabel={prettyPercent(memoryUsagePercent)}
+                subtitle={`${prettyBytes(memoryHealth.usedBytes)} em uso de ${prettyBytes(memoryHealth.totalBytes)}`}
+                series={telemetryHistory.map((item) => ({ id: `${item.id}-memory`, at: item.at, value: item.memoryUsagePercent }))}
+                strokeClass="stroke-emerald-400 fill-emerald-400"
+                fillClass="fill-emerald-500/15"
+              />
             </section>
           </main>
         )}

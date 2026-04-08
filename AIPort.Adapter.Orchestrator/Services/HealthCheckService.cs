@@ -16,6 +16,8 @@ public sealed class HealthCheckService : IHealthCheckService
     private readonly IDbConnectionFactory _dbConnectionFactory;
     private readonly IAgiRuntimeState _agiRuntimeState;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ISystemTelemetryProvider _systemTelemetryProvider;
+    private readonly ISpeechWarmupStatusProvider _speechWarmupStatusProvider;
     private readonly IntelligenceServiceOptions _intelligenceOptions;
     private readonly ILogger<HealthCheckService> _logger;
     private const string CountActiveTenantsSql = "SELECT COUNT(*) FROM Tenants WHERE IsActive = 1";
@@ -24,12 +26,16 @@ public sealed class HealthCheckService : IHealthCheckService
         IDbConnectionFactory dbConnectionFactory,
         IAgiRuntimeState agiRuntimeState,
         IHttpClientFactory httpClientFactory,
+        ISystemTelemetryProvider systemTelemetryProvider,
+        ISpeechWarmupStatusProvider speechWarmupStatusProvider,
         IOptions<IntelligenceServiceOptions> intelligenceOptions,
         ILogger<HealthCheckService> logger)
     {
         _dbConnectionFactory = dbConnectionFactory ?? throw new ArgumentNullException(nameof(dbConnectionFactory));
         _agiRuntimeState = agiRuntimeState ?? throw new ArgumentNullException(nameof(agiRuntimeState));
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
+        _systemTelemetryProvider = systemTelemetryProvider ?? throw new ArgumentNullException(nameof(systemTelemetryProvider));
+        _speechWarmupStatusProvider = speechWarmupStatusProvider ?? throw new ArgumentNullException(nameof(speechWarmupStatusProvider));
         _intelligenceOptions = intelligenceOptions?.Value ?? throw new ArgumentNullException(nameof(intelligenceOptions));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -105,6 +111,8 @@ public sealed class HealthCheckService : IHealthCheckService
         var databaseHealth = await CheckDatabaseHealthAsync(1, cancellationToken);
         var activeCalls = _agiRuntimeState.ActiveChannels;
         var aiHealth = await ProbeIntelligenceServiceAsync(cancellationToken);
+        var systemTelemetry = await _systemTelemetryProvider.GetSnapshotAsync(cancellationToken);
+        var speechWarmup = _speechWarmupStatusProvider.GetCurrent();
 
         var asteriskStatus = !_agiRuntimeState.IsEnabled
             ? "disabled"
@@ -114,7 +122,7 @@ public sealed class HealthCheckService : IHealthCheckService
 
         var overall = !databaseHealth.IsReachable || aiHealth.Status == "unhealthy" || (_agiRuntimeState.IsEnabled && !_agiRuntimeState.IsListening)
             ? "unhealthy"
-            : databaseHealth.Status == "degraded"
+            : databaseHealth.Status == "degraded" || speechWarmup.Status == "degraded"
                 ? "degraded"
                 : "healthy";
 
@@ -149,6 +157,34 @@ public sealed class HealthCheckService : IHealthCheckService
                 baseUrl = _intelligenceOptions.BaseUrl,
                 latencyMs = aiHealth.LatencyMs,
                 message = aiHealth.Message
+            },
+            ["speech"] = new
+            {
+                status = speechWarmup.Status,
+                provider = speechWarmup.Provider,
+                ready = speechWarmup.Ready,
+                lastWarmupAtUtc = speechWarmup.LastWarmupAtUtc,
+                lastWarmupElapsedMs = speechWarmup.LastWarmupElapsedMs,
+                message = speechWarmup.Message
+            },
+            ["system"] = new
+            {
+                status = systemTelemetry.Status,
+                platform = systemTelemetry.Platform,
+                sampledAtUtc = systemTelemetry.SampledAtUtc,
+                logicalCores = systemTelemetry.LogicalCores,
+                message = systemTelemetry.Message,
+                cpu = new
+                {
+                    usagePercent = systemTelemetry.CpuUsagePercent
+                },
+                memory = new
+                {
+                    totalBytes = systemTelemetry.TotalMemoryBytes,
+                    usedBytes = systemTelemetry.UsedMemoryBytes,
+                    availableBytes = systemTelemetry.AvailableMemoryBytes,
+                    usagePercent = systemTelemetry.MemoryUsagePercent
+                }
             },
             ["overall"] = overall
         };

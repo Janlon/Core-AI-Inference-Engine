@@ -2,6 +2,7 @@ using AIPort.Adapter.Orchestrator.Config;
 using AIPort.Adapter.Orchestrator.Integrations.Interfaces;
 using Google.Cloud.TextToSpeech.V1;
 using Microsoft.Extensions.Options;
+using System.Diagnostics;
 
 namespace AIPort.Adapter.Orchestrator.Integrations;
 
@@ -9,6 +10,8 @@ public sealed class TextToSpeechService : ITextToSpeechService
 {
     private readonly SpeechOptions _options;
     private readonly ILogger<TextToSpeechService> _logger;
+    private readonly SemaphoreSlim _googleClientLock = new(1, 1);
+    private TextToSpeechClient? _googleClient;
 
     public TextToSpeechService(IOptions<SpeechOptions> options, ILogger<TextToSpeechService> logger)
     {
@@ -36,12 +39,45 @@ public sealed class TextToSpeechService : ITextToSpeechService
         var fileNoExt = Path.Combine(tempDir, $"tts-{Guid.NewGuid():N}");
         var filePath = fileNoExt + ".slin";
 
+        var timer = Stopwatch.StartNew();
         var wavBytes = await SynthesizeGoogleAudioAsync(text, AudioEncoding.Linear16, ct);
         var pcmBytes = ExtractRawPcmFromWav(wavBytes);
         await File.WriteAllBytesAsync(filePath, pcmBytes, ct);
+        timer.Stop();
 
-        _logger.LogInformation("TTS gerado em {Path} (PCM/slin 8kHz mono, {Bytes} bytes)", filePath, pcmBytes.Length);
+        _logger.LogInformation("TTS gerado em {Path} (PCM/slin 8kHz mono, {Bytes} bytes, {ElapsedMs} ms)", filePath, pcmBytes.Length, timer.ElapsedMilliseconds);
         return fileNoExt;
+    }
+
+    public async Task WarmupAsync(CancellationToken ct = default)
+    {
+        if (IsAsteriskProvider())
+            return;
+
+        EnsureCredentials();
+
+        var timer = Stopwatch.StartNew();
+        var client = await GetGoogleClientAsync(ct);
+        await client.SynthesizeSpeechAsync(
+            new SynthesizeSpeechRequest
+            {
+                Input = new SynthesisInput { Text = "ok" },
+                Voice = new VoiceSelectionParams
+                {
+                    LanguageCode = _options.Google.TtsLanguageCode,
+                    Name = _options.Google.TtsVoiceName ?? string.Empty
+                },
+                AudioConfig = new AudioConfig
+                {
+                    AudioEncoding = AudioEncoding.Linear16,
+                    SampleRateHertz = 8000,
+                    SpeakingRate = 1.0
+                }
+            },
+            cancellationToken: ct);
+        timer.Stop();
+
+        _logger.LogInformation("Warmup do cliente Google TTS concluido em {ElapsedMs} ms.", timer.ElapsedMilliseconds);
     }
 
     public async Task<(byte[] AudioBytes, string ContentType, string FileExtension)> SynthesizeDownloadAsync(
@@ -74,7 +110,7 @@ public sealed class TextToSpeechService : ITextToSpeechService
 
     private async Task<byte[]> SynthesizeGoogleAudioAsync(string text, AudioEncoding audioEncoding, CancellationToken ct)
     {
-        var client = await TextToSpeechClient.CreateAsync();
+        var client = await GetGoogleClientAsync(ct);
         var request = new SynthesizeSpeechRequest
         {
             Input = new SynthesisInput { Text = text },
@@ -93,6 +129,27 @@ public sealed class TextToSpeechService : ITextToSpeechService
 
         var response = await client.SynthesizeSpeechAsync(request, cancellationToken: ct);
         return response.AudioContent.ToByteArray();
+    }
+
+    private async Task<TextToSpeechClient> GetGoogleClientAsync(CancellationToken ct)
+    {
+        if (_googleClient is not null)
+            return _googleClient;
+
+        await _googleClientLock.WaitAsync(ct);
+        try
+        {
+            if (_googleClient is not null)
+                return _googleClient;
+
+            _googleClient = await TextToSpeechClient.CreateAsync();
+            _logger.LogInformation("Cliente Google TTS inicializado e mantido em cache para reutilizacao.");
+            return _googleClient;
+        }
+        finally
+        {
+            _googleClientLock.Release();
+        }
     }
 
     /// <summary>

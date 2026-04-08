@@ -223,6 +223,9 @@ public sealed class OrchestrationService : IOrchestrationService
             }
             else if (call.EscalateDueToSilence)
             {
+                call.FinalReasonCode = "SILENCIO_CONSECUTIVO";
+                call.FinalReasonCategory = "input";
+                call.FinalReasonMessage = "O visitante permaneceu em silencio e o atendimento foi escalado para a central.";
                 _logger.LogInformation(
                     "Silêncio consecutivo detectado Session={SessionId}; escalando para atendimento humano.",
                     call.SessionId);
@@ -262,6 +265,9 @@ public sealed class OrchestrationService : IOrchestrationService
             }
             catch (HttpRequestException ex)
             {
+                call.FinalReasonCode = "INFRA_HTTP_FAILURE";
+                call.FinalReasonCategory = "infrastructure";
+                call.FinalReasonMessage = "Falha HTTP em infraestrutura externa durante a execucao da decisao.";
                 _logger.LogWarning(ex,
                     "Falha de infraestrutura externa durante execução da decisão Session={SessionId}. Aplicando fallback humano.",
                     call.SessionId);
@@ -271,6 +277,9 @@ public sealed class OrchestrationService : IOrchestrationService
             }
             catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
             {
+                call.FinalReasonCode = "INFRA_TIMEOUT";
+                call.FinalReasonCategory = "timeout";
+                call.FinalReasonMessage = "Timeout em infraestrutura externa durante a execucao da decisao.";
                 _logger.LogWarning(ex,
                     "Timeout de infraestrutura externa durante execução da decisão Session={SessionId}. Aplicando fallback humano.",
                     call.SessionId);
@@ -311,6 +320,9 @@ public sealed class OrchestrationService : IOrchestrationService
         catch (AgiHangupException)
         {
             acaoExecutada = iaResponse?.AcaoSugerida ?? "CHAMADA_ENCERRADA";
+            call.FinalReasonCode ??= "ASTERISK_HANGUP";
+            call.FinalReasonCategory ??= "telephony";
+            call.FinalReasonMessage ??= "Canal encerrado pelo Asterisk durante o atendimento.";
             _logger.LogInformation("Canal AGI encerrado pelo Asterisk durante atendimento Session={SessionId}.", call.SessionId);
 
             _eventService.PublishCallEnded(tenant?.NomeIdentificador ?? "Desconhecido", "Hangup pelo Asterisk");
@@ -332,6 +344,9 @@ public sealed class OrchestrationService : IOrchestrationService
         catch (Exception ex)
         {
             acaoExecutada = iaResponse?.AcaoSugerida ?? "ERRO_ORQUESTRACAO";
+            call.FinalReasonCode ??= "ERRO_ORQUESTRACAO";
+            call.FinalReasonCategory ??= "unexpected";
+            call.FinalReasonMessage ??= ex.Message;
             _logger.LogError(ex, "Falha durante atendimento Session={SessionId}", call.SessionId);
 
             _eventService.PublishError(
@@ -353,9 +368,18 @@ public sealed class OrchestrationService : IOrchestrationService
 
                     await _callSessionRepository.CompleteSessionAsync(
                         call.SessionId,
-                        acaoExecutada,
-                        finalExtractedData,
-                        DateTime.UtcNow,
+                        new CallSessionFinalizationAudit(
+                            FinalAction: acaoExecutada,
+                            FinalExtractedData: finalExtractedData,
+                            EndedAt: DateTime.UtcNow,
+                            FinalReasonCode: call.FinalReasonCode,
+                            FinalReasonCategory: call.FinalReasonCategory,
+                            FinalReasonMessage: call.FinalReasonMessage,
+                            WebhookHttpStatus: call.NotificationCascadeResult?.Webhook?.HttpStatusCode,
+                            WebhookPayloadHash: call.NotificationCascadeResult?.Webhook?.PayloadHash,
+                            WebhookPayloadSentAt: call.NotificationCascadeResult?.Webhook?.PayloadSentAtUtc,
+                            WebhookCorrelationId: call.NotificationCascadeResult?.Webhook?.CorrelationId,
+                            WebhookCorrelationField: call.NotificationCascadeResult?.Webhook?.CorrelationField),
                         ct);
                 }
                 catch (Exception ex)
@@ -732,8 +756,25 @@ public sealed class OrchestrationService : IOrchestrationService
 
     private async Task PlayPromptAsync(AgiCallContext call, string prompt, CancellationToken ct)
     {
+        var timer = Stopwatch.StartNew();
+        _logger.LogInformation(
+            "Iniciando prompt de voz Session={SessionId} PromptLength={PromptLength}",
+            call.SessionId,
+            prompt?.Length ?? 0);
+
         var audioFile = await _tts.SynthesizeAsync(prompt, ct);
+        _logger.LogInformation(
+            "Audio sintetizado Session={SessionId} AudioRef={AudioRef}",
+            call.SessionId,
+            audioFile);
+
         await call.VoiceChannel!.PlayAsync(audioFile, ct);
+        timer.Stop();
+
+        _logger.LogInformation(
+            "Prompt de voz concluido Session={SessionId} ElapsedMs={ElapsedMs}",
+            call.SessionId,
+            timer.ElapsedMilliseconds);
     }
 
     private string BuildFinalAuditJson(
@@ -780,6 +821,38 @@ public sealed class OrchestrationService : IOrchestrationService
             dadosExtraidos = iaResponse?.DadosExtraidos,
             acaoFinal = acaoExecutada,
             respostaFalada,
+            motivoFinal = new
+            {
+                code = call.FinalReasonCode,
+                category = call.FinalReasonCategory,
+                message = call.FinalReasonMessage
+            },
+            notificacao = call.NotificationCascadeResult is null
+                ? null
+                : new
+                {
+                    success = call.NotificationCascadeResult.Success,
+                    reasonCode = call.NotificationCascadeResult.ReasonCode,
+                    reasonCategory = call.NotificationCascadeResult.ReasonCategory,
+                    reasonMessage = call.NotificationCascadeResult.ReasonMessage,
+                    redirectToHumanRecommended = call.NotificationCascadeResult.RedirectToHumanRecommended,
+                    webhook = call.NotificationCascadeResult.Webhook is null
+                        ? null
+                        : new
+                        {
+                            success = call.NotificationCascadeResult.Webhook.Success,
+                            code = call.NotificationCascadeResult.Webhook.Code,
+                            category = call.NotificationCascadeResult.Webhook.Category,
+                            message = call.NotificationCascadeResult.Webhook.Message,
+                            httpStatusCode = call.NotificationCascadeResult.Webhook.HttpStatusCode,
+                            responseBodyExcerpt = call.NotificationCascadeResult.Webhook.ResponseBodyExcerpt,
+                            elapsedMs = call.NotificationCascadeResult.Webhook.ElapsedMs,
+                            payloadHash = call.NotificationCascadeResult.Webhook.PayloadHash,
+                            payloadSentAtUtc = call.NotificationCascadeResult.Webhook.PayloadSentAtUtc,
+                            correlationId = call.NotificationCascadeResult.Webhook.CorrelationId,
+                            correlationField = call.NotificationCascadeResult.Webhook.CorrelationField
+                        }
+                },
             despachoFinal
         });
     }

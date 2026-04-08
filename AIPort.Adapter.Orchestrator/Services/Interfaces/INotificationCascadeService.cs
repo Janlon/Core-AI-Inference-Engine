@@ -5,5 +5,5 @@ namespace AIPort.Adapter.Orchestrator.Services.Interfaces;
 
 public interface INotificationCascadeService
 {
-    Task<bool> NotifyAsync(AgiCallContext call, Tenant tenant, InferenceResponseDto iaResponse, CancellationToken ct = default);
+    Task<NotificationCascadeResult> NotifyAsync(AgiCallContext call, Tenant tenant, InferenceResponseDto iaResponse, CancellationToken ct = default);
 }

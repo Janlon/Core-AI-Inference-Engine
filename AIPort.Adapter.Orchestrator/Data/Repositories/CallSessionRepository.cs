@@ -8,6 +8,7 @@ public sealed class CallSessionRepository : ICallSessionRepository
     private readonly IDbConnectionFactory _connectionFactory;
     private bool? _hasResolutionLayerColumn;
     private bool? _hasExtractedDataJsonColumn;
+    private readonly Dictionary<string, bool> _callSessionColumnCache = new(StringComparer.OrdinalIgnoreCase);
 
     public CallSessionRepository(IDbConnectionFactory connectionFactory)
     {
@@ -195,30 +196,87 @@ public sealed class CallSessionRepository : ICallSessionRepository
         return _hasExtractedDataJsonColumn.Value;
     }
 
-    public async Task CompleteSessionAsync(string sessionId, string finalAction, string finalExtractedData, DateTime endedAt, CancellationToken ct = default)
+    public async Task CompleteSessionAsync(string sessionId, CallSessionFinalizationAudit audit, CancellationToken ct = default)
     {
-        const string sql = """
+        using var conn = _connectionFactory.CreateConnection();
+        var setClauses = new List<string>
+        {
+            "EndedAt = @EndedAt",
+            "FinalAction = @FinalAction",
+            "FinalExtractedData = @FinalExtractedData"
+        };
+
+        if (await HasCallSessionColumnAsync(conn, "FinalReasonCode", ct))
+            setClauses.Add("FinalReasonCode = @FinalReasonCode");
+
+        if (await HasCallSessionColumnAsync(conn, "FinalReasonCategory", ct))
+            setClauses.Add("FinalReasonCategory = @FinalReasonCategory");
+
+        if (await HasCallSessionColumnAsync(conn, "FinalReasonMessage", ct))
+            setClauses.Add("FinalReasonMessage = @FinalReasonMessage");
+
+        if (await HasCallSessionColumnAsync(conn, "WebhookHttpStatus", ct))
+            setClauses.Add("WebhookHttpStatus = @WebhookHttpStatus");
+
+        if (await HasCallSessionColumnAsync(conn, "WebhookPayloadHash", ct))
+            setClauses.Add("WebhookPayloadHash = @WebhookPayloadHash");
+
+        if (await HasCallSessionColumnAsync(conn, "WebhookPayloadSentAt", ct))
+            setClauses.Add("WebhookPayloadSentAt = @WebhookPayloadSentAt");
+
+        if (await HasCallSessionColumnAsync(conn, "WebhookCorrelationId", ct))
+            setClauses.Add("WebhookCorrelationId = @WebhookCorrelationId");
+
+        if (await HasCallSessionColumnAsync(conn, "WebhookCorrelationField", ct))
+            setClauses.Add("WebhookCorrelationField = @WebhookCorrelationField");
+
+        var sql = $"""
             UPDATE CallSessions
             SET
-                EndedAt = @EndedAt,
-                FinalAction = @FinalAction,
-                FinalExtractedData = @FinalExtractedData
+                {string.Join(",\n                ", setClauses)}
             WHERE SessionId = @SessionId;
             """;
 
-        using var conn = _connectionFactory.CreateConnection();
         var cmd = new CommandDefinition(
             sql,
             new
             {
                 SessionId = sessionId,
-                EndedAt = endedAt,
-                FinalAction = finalAction,
-                FinalExtractedData = finalExtractedData
+                audit.EndedAt,
+                audit.FinalAction,
+                audit.FinalExtractedData,
+                audit.FinalReasonCode,
+                audit.FinalReasonCategory,
+                audit.FinalReasonMessage,
+                audit.WebhookHttpStatus,
+                audit.WebhookPayloadHash,
+                audit.WebhookPayloadSentAt,
+                audit.WebhookCorrelationId,
+                audit.WebhookCorrelationField
             },
             cancellationToken: ct);
 
         await conn.ExecuteAsync(cmd);
+    }
+
+    private async Task<bool> HasCallSessionColumnAsync(System.Data.IDbConnection conn, string columnName, CancellationToken ct)
+    {
+        if (_callSessionColumnCache.TryGetValue(columnName, out var cached))
+            return cached;
+
+        const string sql = """
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'CallSessions'
+              AND COLUMN_NAME = @ColumnName;
+            """;
+
+        var cmd = new CommandDefinition(sql, new { ColumnName = columnName }, cancellationToken: ct);
+        var count = await conn.ExecuteScalarAsync<long>(cmd);
+        var exists = count > 0;
+        _callSessionColumnCache[columnName] = exists;
+        return exists;
     }
 
     public async Task<long> CountActiveSessionsAsync(CancellationToken ct = default)
