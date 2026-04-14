@@ -47,7 +47,7 @@ public sealed class DecisionEngine : IDecisionEngine
         var opts = _options.Value;
         var thresholds = ResolveThresholds(request);
         var tenantRule = _rulesLoader.GetRule(request.TenantType);
-        var state = new ProcessingState(request.Texto, request.TenantType);
+        var state = new ProcessingState(request.Texto, request.TenantType, request.SessionId, request.Metadata);
         DecisionDebugInfo? regexDebug = null;
 
         _logger.LogInformation(

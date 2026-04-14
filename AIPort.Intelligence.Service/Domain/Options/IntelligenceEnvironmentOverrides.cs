@@ -33,6 +33,10 @@ public static class IntelligenceEnvironmentOverrides
             ["AIService:Regex:TimeoutMs"] = Environment.GetEnvironmentVariable("AIPORT_AI_REGEX_TIMEOUT_MS"),
 
             ["AIService:Nlp:Enabled"] = Environment.GetEnvironmentVariable("AIPORT_AI_NLP_ENABLED"),
+            ["AIService:Nlp:UseExternalApi"] = Environment.GetEnvironmentVariable("AIPORT_AI_NLP_USE_EXTERNAL_API"),
+            ["AIService:Nlp:ExternalApiBaseUrl"] = Environment.GetEnvironmentVariable("AIPORT_AI_NLP_EXTERNAL_API_BASE_URL"),
+            ["AIService:Nlp:ExternalApiTimeoutMs"] = Environment.GetEnvironmentVariable("AIPORT_AI_NLP_EXTERNAL_API_TIMEOUT_MS"),
+            ["AIService:Nlp:ExternalApiKey"] = Environment.GetEnvironmentVariable("AIPORT_AI_NLP_EXTERNAL_API_KEY"),
             ["AIService:Nlp:UseSpacy"] = Environment.GetEnvironmentVariable("AIPORT_AI_NLP_USE_SPACY"),
             ["AIService:Nlp:SpacyPythonExecutable"] = Environment.GetEnvironmentVariable("AIPORT_AI_NLP_SPACY_PYTHON"),
             ["AIService:Nlp:SpacyModel"] = Environment.GetEnvironmentVariable("AIPORT_AI_NLP_SPACY_MODEL"),

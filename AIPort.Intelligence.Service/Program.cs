@@ -5,6 +5,7 @@ using AIPort.Intelligence.Service.Services.Interfaces;
 using Scalar.AspNetCore;
 using System.Text.Encodings.Web;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -56,7 +57,15 @@ builder.Services.AddOpenApi(options =>
 builder.Services.AddSingleton<IRulesLoader, RulesLoaderService>();
 
 builder.Services.AddScoped<IRegexProcessor, RegexEngine>();
-builder.Services.AddScoped<INlpProcessor, NlpEngine>();
+builder.Services.AddHttpClient<INlpProcessor, HttpNlpProcessor>((serviceProvider, client) =>
+{
+    var nlpOptions = serviceProvider.GetRequiredService<IOptions<AIServiceOptions>>().Value.Nlp;
+
+    if (Uri.TryCreate(nlpOptions.ExternalApiBaseUrl, UriKind.Absolute, out var baseUri))
+        client.BaseAddress = baseUri;
+
+    client.Timeout = TimeSpan.FromMilliseconds(Math.Max(1000, nlpOptions.ExternalApiTimeoutMs));
+});
 builder.Services.AddScoped<ILlmProcessor, LlmEngine>();
 builder.Services.AddScoped<IDecisionEngine, DecisionEngine>();
 

@@ -1,0 +1,1 @@
+"""Pacote principal do servico Python de NLP."""

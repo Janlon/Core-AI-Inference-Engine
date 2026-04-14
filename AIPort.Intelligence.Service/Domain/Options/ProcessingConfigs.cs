@@ -6,19 +6,31 @@ public sealed class NlpConfig
     /// <summary>Se false, a camada NLP é pulada e o sistema vai direto para o LLM.</summary>
     public bool Enabled { get; set; } = true;
 
-    /// <summary>Habilita processamento NLP via spaCy (Python) como primeira tentativa.</summary>
+    /// <summary>Quando true, usa o servico Python externo como implementacao oficial da camada NLP.</summary>
+    public bool UseExternalApi { get; set; } = true;
+
+    /// <summary>Base URL do servico Python de NLP (ex: http://localhost:8010).</summary>
+    public string ExternalApiBaseUrl { get; set; } = "http://localhost:8010";
+
+    /// <summary>Timeout em milissegundos para a chamada HTTP ao servico Python.</summary>
+    public int ExternalApiTimeoutMs { get; set; } = 3000;
+
+    /// <summary>Api key opcional enviada no header X-Api-Key ao servico Python.</summary>
+    public string? ExternalApiKey { get; set; }
+
+    /// <summary>Legado: mantido para fallback local caso a implementacao interna volte a ser usada.</summary>
     public bool UseSpacy { get; set; } = false;
 
-    /// <summary>Executavel Python usado para invocar o spaCy (ex: python, py, caminho absoluto).</summary>
+    /// <summary>Legado: executavel Python usado para invocar o spaCy localmente.</summary>
     public string SpacyPythonExecutable { get; set; } = "/opt/aiport/spacy-venv/bin/python";
 
-    /// <summary>Modelo spaCy para NER (ex: pt_core_news_sm, pt_core_news_lg).</summary>
+    /// <summary>Legado: modelo spaCy local para NER.</summary>
     public string SpacyModel { get; set; } = "pt_core_news_sm";
 
-    /// <summary>Timeout em milissegundos para cada chamada externa ao spaCy.</summary>
+    /// <summary>Legado: timeout para o spaCy local.</summary>
     public int SpacyTimeoutMs { get; set; } = 2500;
 
-    /// <summary>Habilita Catalyst como segunda tentativa (antes do fallback heuristico).</summary>
+    /// <summary>Legado: habilita Catalyst como fallback local.</summary>
     public bool UseCatalyst { get; set; } = false;
 
     /// <summary>

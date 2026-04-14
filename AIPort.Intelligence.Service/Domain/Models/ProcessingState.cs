@@ -8,14 +8,22 @@ namespace AIPort.Intelligence.Service.Domain.Models;
 /// </summary>
 public sealed class ProcessingState
 {
-    public ProcessingState(string texto, string tenantType)
+    public ProcessingState(
+        string texto,
+        string tenantType,
+        string? sessionId = null,
+        IDictionary<string, string>? metadata = null)
     {
         Texto = texto;
         TenantType = tenantType;
+        SessionId = sessionId;
+        Metadata = metadata;
     }
 
     public string Texto { get; }
     public string TenantType { get; }
+    public string? SessionId { get; }
+    public IDictionary<string, string>? Metadata { get; }
 
     // --- Dados progressivamente acumulados ---
     public string? NomeDetectado { get; set; }
