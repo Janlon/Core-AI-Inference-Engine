@@ -89,7 +89,8 @@ public sealed class FastAgiBackgroundServer : BackgroundService
 
     private async Task HandleClientAsync(TcpClient client, CancellationToken ct)
     {
-        _runtimeState.IncrementActiveChannels();
+        var remoteEndpoint = client.Client.RemoteEndPoint?.ToString();
+        var connectionId = _runtimeState.IncrementActiveChannels(remoteEndpoint);
         using var _ = client;
         using var stream = client.GetStream();
         using var reader = new StreamReader(stream, Encoding.UTF8);
@@ -113,6 +114,8 @@ public sealed class FastAgiBackgroundServer : BackgroundService
             PreTranscribedText = FirstNonEmpty(map, "pretranscribedtext"),
             Variables = new Dictionary<string, string>(map, StringComparer.OrdinalIgnoreCase)
         };
+
+        _runtimeState.AttachHandshake(connectionId, req.UniqueId, req.CallerId, req.Channel, req.TenantPid);
 
         try
         {
@@ -143,7 +146,7 @@ public sealed class FastAgiBackgroundServer : BackgroundService
         }
         finally
         {
-            _runtimeState.DecrementActiveChannels();
+            _runtimeState.DecrementActiveChannels(connectionId);
         }
     }
 

@@ -661,8 +661,8 @@ function App() {
     })
   }, [cpuUsagePercent, memoryUsagePercent, systemHealth.sampledAtUtc])
 
-  const mergedEvents = useMemo(() => {
-    const all = [...sseEvents, ...(recentEventsQuery.data ?? [])]
+  const realtimeEvents = useMemo(() => {
+    const all = [...sseEvents]
     const deduped = []
     const seen = new Set()
 
@@ -677,7 +677,13 @@ function App() {
     return deduped
       .sort((left, right) => new Date(right.at ?? right.At) - new Date(left.at ?? left.At))
       .slice(0, 50)
-  }, [recentEventsQuery.data, sseEvents])
+  }, [sseEvents])
+
+  const recentEvents = useMemo(() => {
+    return [...(recentEventsQuery.data ?? [])]
+      .sort((left, right) => new Date(right.at ?? right.At) - new Date(left.at ?? left.At))
+      .slice(0, 20)
+  }, [recentEventsQuery.data])
 
   const visibleConversationSessions = conversationsQuery.data?.sessions ?? []
 
@@ -1109,14 +1115,14 @@ function App() {
                 </div>
               </div>
               <div className="space-y-2">
-                {mergedEvents.length === 0 ? (
+                {realtimeEvents.length === 0 ? (
                   <p className="py-6 text-center text-sm text-slate-400">
                     Aguardando eventos em tempo real...
                     <br />
-                    <span className="text-xs text-slate-500">(Chamadas aparecerão aqui quando iniciadas)</span>
+                    <span className="text-xs text-slate-500">(Esta lista mostra apenas o stream SSE atual, sem histórico antigo)</span>
                   </p>
                 ) : (
-                  mergedEvents.map((event, index) => (
+                  realtimeEvents.map((event, index) => (
                     <article key={`${event.id || event.Id || event.at || event.At}-${index}`} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
                       <div className="flex items-center justify-between gap-3 text-xs text-slate-400">
                         <span className="inline-flex items-center gap-1.5">
@@ -1137,6 +1143,32 @@ function App() {
                   <p>Aguardando reconexão ao servidor de eventos...</p>
                 </div>
               )}
+            </section>
+
+            <section className="glass-card">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Historico Recente</h2>
+                <span className="text-xs text-slate-400">Eventos já acumulados na memória do backend</span>
+              </div>
+              <div className="space-y-2">
+                {recentEvents.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-slate-400">Nenhum evento recente disponível.</p>
+                ) : (
+                  recentEvents.map((event, index) => (
+                    <article key={`${event.id || event.Id || event.at || event.At}-recent-${index}`} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+                      <div className="flex items-center justify-between gap-3 text-xs text-slate-400">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className={`h-1.5 w-1.5 rounded-full ${(event.level ?? event.Level) === 'error' ? 'bg-rose-500' : (event.level ?? event.Level) === 'warn' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                          <span className="uppercase tracking-wide">{event.level ?? event.Level ?? 'info'}</span>
+                        </span>
+                        <span>{(event.category ?? event.Category) && `[${event.category ?? event.Category}]`}</span>
+                        <span>{new Date(event.at ?? event.At).toLocaleTimeString()}</span>
+                      </div>
+                      <p className="mt-2 text-sm text-slate-200">{event.message ?? event.Message}</p>
+                    </article>
+                  ))
+                )}
+              </div>
             </section>
 
             <section className="glass-card">

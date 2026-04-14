@@ -250,7 +250,7 @@ public sealed partial class NlpEngine : INlpProcessor
             DadosExtraidos = new()
             {
                 Nome = nome,
-                NomeVisitante = estadoAtual.NomeVisitanteDetectado ?? nome,
+                NomeVisitante = estadoAtual.NomeVisitanteDetectado,
                 Documento = estadoAtual.DocumentoDetectado,
                 Cpf = estadoAtual.CpfDetectado,
                 Unidade = estadoAtual.UnidadeDetectada,

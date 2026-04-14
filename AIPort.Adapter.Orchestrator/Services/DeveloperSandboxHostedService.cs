@@ -9,6 +9,8 @@ using Microsoft.Extensions.Options;
 using System.Globalization;
 using System.Runtime.Versioning;
 using System.Speech.Recognition;
+using AIPort.Adapter.Orchestrator.Agi;
+using AIPort.Adapter.Orchestrator.Domain.Abstractions;
 
 namespace AIPort.Adapter.Orchestrator.Services;
 
@@ -57,44 +59,11 @@ public sealed class DeveloperSandboxHostedService : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            string? capturedText;
-
-            if (_activeInputMode == InputSourceMode.WindowsVoice)
-            {
-                try
-                {
-                    capturedText = await RecognizeFromDefaultMicrophoneAsync(stoppingToken);
-                }
-                catch (Exception ex) when (ShouldFallbackToTextMode(ex))
-                {
-                    _activeInputMode = InputSourceMode.WindowsText;
-                    _logger.LogWarning(ex,
-                        "WindowsVoice indisponível no sandbox. Alternando automaticamente para WindowsText.");
-
-                    Console.WriteLine();
-                    Console.WriteLine("[Sandbox] WindowsVoice indisponível nesta máquina. Alternando para WindowsText.");
-                    Console.WriteLine("[Sandbox] Digite suas frases no prompt 'sandbox>' ou use /exit para sair.");
-                    Console.WriteLine();
-
-                    capturedText = await ReadTextFromConsoleAsync(stoppingToken);
-                }
-            }
-            else if (_activeInputMode == InputSourceMode.WindowsText)
-            {
-                capturedText = await ReadTextFromConsoleAsync(stoppingToken);
-            }
-            else
-            {
-                capturedText = null;
-            }
-
-            if (capturedText is null)
+            var shouldStartCall = await WaitForNextCallAsync(stoppingToken);
+            if (!shouldStartCall)
                 break;
 
-            if (string.IsNullOrWhiteSpace(capturedText))
-                continue;
-
-            await RunSandboxInteractionAsync(capturedText, stoppingToken);
+            await RunSandboxCallAsync(stoppingToken);
         }
     }
 
@@ -129,11 +98,31 @@ public sealed class DeveloperSandboxHostedService : BackgroundService
             _tenantPid);
     }
 
-    private async Task<string?> ReadTextFromConsoleAsync(CancellationToken stoppingToken)
+    private async Task<bool> WaitForNextCallAsync(CancellationToken stoppingToken)
     {
-        Console.Write("sandbox> ");
-        var line = await Task.Run(Console.ReadLine, stoppingToken);
-        return HandleConsoleCommand(line);
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            Console.Write("sandbox idle> pressione Enter para iniciar a chamada, /tenant <pid> ou /exit\n> ");
+            var line = await Task.Run(Console.ReadLine, stoppingToken);
+
+            if (line is null)
+                return false;
+
+            var trimmed = line.Trim();
+            if (trimmed.Length == 0 || string.Equals(trimmed, "/call", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            var commandResult = HandleConsoleCommand(trimmed);
+            if (commandResult is null)
+                return false;
+
+            if (commandResult.Length == 0)
+                continue;
+
+            Console.WriteLine("Comando não reconhecido. Use Enter para iniciar uma chamada ou /tenant <pid> para trocar o tenant.");
+        }
+
+        return false;
     }
 
     private string? HandleConsoleCommand(string? line)
@@ -314,7 +303,49 @@ public sealed class DeveloperSandboxHostedService : BackgroundService
         }
     }
 
-    private async Task RunSandboxInteractionAsync(string capturedText, CancellationToken stoppingToken)
+    private async Task<string?> CaptureVisitorInputAsync(CancellationToken stoppingToken)
+    {
+        if (_activeInputMode == InputSourceMode.WindowsVoice)
+        {
+            try
+            {
+                return await RecognizeFromDefaultMicrophoneAsync(stoppingToken);
+            }
+            catch (Exception ex) when (ShouldFallbackToTextMode(ex))
+            {
+                _activeInputMode = InputSourceMode.WindowsText;
+                _logger.LogWarning(ex,
+                    "WindowsVoice indisponível no sandbox. Alternando automaticamente para WindowsText.");
+
+                Console.WriteLine();
+                Console.WriteLine("[Sandbox] WindowsVoice indisponível nesta máquina. Alternando para WindowsText.");
+                Console.WriteLine("[Sandbox] As próximas respostas do visitante serão digitadas no console.");
+                Console.WriteLine();
+            }
+        }
+
+        Console.Write("visitante> ");
+        var line = await Task.Run(Console.ReadLine, stoppingToken);
+        if (line is null)
+            throw new AgiHangupException("Entrada do visitante encerrada no sandbox.");
+
+        var trimmed = line.Trim();
+        if (string.Equals(trimmed, "/hangup", StringComparison.OrdinalIgnoreCase))
+            throw new AgiHangupException("Chamada encerrada manualmente pelo sandbox.");
+
+        if (string.Equals(trimmed, "/exit", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "exit", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "quit", StringComparison.OrdinalIgnoreCase))
+        {
+            _hostApplicationLifetime.StopApplication();
+            throw new AgiHangupException("Sandbox finalizado pelo operador.");
+        }
+
+        Console.WriteLine($"[Captured] {trimmed}");
+        return trimmed;
+    }
+
+    private async Task RunSandboxCallAsync(CancellationToken stoppingToken)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
         var orchestrationService = scope.ServiceProvider.GetRequiredService<IOrchestrationService>();
@@ -329,12 +360,15 @@ public sealed class DeveloperSandboxHostedService : BackgroundService
             Context = _runtimeOptions.DeveloperSandbox.Context,
             Channel = $"sandbox/{_activeInputMode.ToString().ToLowerInvariant()}",
             TenantPid = _tenantPid,
-            PreTranscribedText = capturedText,
             InputSource = _activeInputMode.ToString(),
             StartedAtUtc = DateTimeOffset.UtcNow
         };
 
-        Console.WriteLine($"[Captured] {capturedText}");
+        using var voiceChannel = new DeveloperSandboxVoiceChannel(context, CaptureVisitorInputAsync);
+        context.VoiceChannel = voiceChannel;
+
+        Console.WriteLine();
+        Console.WriteLine($"[Call] iniciada Session={sessionId} TenantPid={_tenantPid}");
 
         var result = await orchestrationService.HandleCallAsync(context, stoppingToken);
 
@@ -363,6 +397,8 @@ public sealed class DeveloperSandboxHostedService : BackgroundService
         if (!result.Sucesso && !string.IsNullOrWhiteSpace(result.MotivoFalha))
             Console.WriteLine($"[Failure] {result.MotivoFalha}");
 
+        Console.WriteLine($"[Call] encerrada Session={sessionId} Acao={result.AcaoExecutada}");
+
         Console.WriteLine();
     }
 
@@ -385,5 +421,71 @@ public sealed class DeveloperSandboxHostedService : BackgroundService
         return ex is ArgumentException
             || ex is PlatformNotSupportedException
             || ex is InvalidOperationException;
+    }
+
+    private sealed class DeveloperSandboxVoiceChannel : IVoiceChannel, IDisposable
+    {
+        private readonly AgiCallContext _context;
+        private readonly Func<CancellationToken, Task<string?>> _captureInputAsync;
+
+        public DeveloperSandboxVoiceChannel(
+            AgiCallContext context,
+            Func<CancellationToken, Task<string?>> captureInputAsync)
+        {
+            _context = context;
+            _captureInputAsync = captureInputAsync;
+        }
+
+        public Task<char?> ReadDigitAsync(int timeoutMs, CancellationToken ct = default)
+        {
+            return Task.FromResult<char?>(null);
+        }
+
+        public Task<VoiceChannelResponse> PlayAsync(string filePath, CancellationToken ct = default)
+        {
+            var rendered = TryRenderPrompt(filePath, out var prompt)
+                ? prompt
+                : $"[audio] {filePath}";
+
+            Console.WriteLine($"[Porteiro] {rendered}");
+            return Task.FromResult(new VoiceChannelResponse(200, 0, null, rendered));
+        }
+
+        public async Task<VoiceChannelResponse> RecordAsync(string savePath, int maxTimeMs, CancellationToken ct = default)
+        {
+            var captured = await _captureInputAsync(ct) ?? string.Empty;
+            _context.PreTranscribedText = captured;
+            return new VoiceChannelResponse(200, 0, null, captured);
+        }
+
+        public void Dispose()
+        {
+        }
+
+        private static bool TryRenderPrompt(string filePath, out string prompt)
+        {
+            const string sandboxPrefix = "sandbox-tts://";
+            const string asteriskPrefix = "asterisk-tts://";
+
+            if (filePath.StartsWith(sandboxPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                prompt = Uri.UnescapeDataString(filePath[sandboxPrefix.Length..]);
+                return true;
+            }
+
+            if (filePath.StartsWith(asteriskPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                var payload = filePath[asteriskPrefix.Length..];
+                var slashIndex = payload.IndexOf('/');
+                if (slashIndex >= 0 && slashIndex < payload.Length - 1)
+                {
+                    prompt = Uri.UnescapeDataString(payload[(slashIndex + 1)..]);
+                    return true;
+                }
+            }
+
+            prompt = string.Empty;
+            return false;
+        }
     }
 }

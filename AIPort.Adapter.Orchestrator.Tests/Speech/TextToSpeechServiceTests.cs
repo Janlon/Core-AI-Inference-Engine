@@ -18,8 +18,15 @@ public class TextToSpeechServiceTests
         return Options.Create(opts);
     }
 
+    private static IOptions<RuntimeInputOptions> BuildRuntimeOptions(Action<RuntimeInputOptions>? configure = null)
+    {
+        var opts = new RuntimeInputOptions();
+        configure?.Invoke(opts);
+        return Options.Create(opts);
+    }
+
     private static TextToSpeechService BuildService(IOptions<SpeechOptions> opts) =>
-        new(opts, Mock.Of<ILogger<TextToSpeechService>>());
+        new(opts, BuildRuntimeOptions(), Mock.Of<ILogger<TextToSpeechService>>());
 
     // ──────────────────────────────────────────────────────────────────────────
     // TTS ASTERISK (sem credenciais, sempre executa)
@@ -116,7 +123,7 @@ public class TextToSpeechServiceTests
     /// Pular com `dotnet test --filter "Category!=Integration"`.
     /// </summary>
     [Fact]
-    public async Task Google_SynthesizeAsync_GeraArquivoWav()
+    public async Task Google_SynthesizeAsync_GeraArquivoSln()
     {
         var credPath = Environment.GetEnvironmentVariable("AIPORT_GOOGLE_CREDENTIALS_PATH")
             ?? throw new InvalidOperationException("Defina AIPORT_GOOGLE_CREDENTIALS_PATH para este teste.");
@@ -141,11 +148,11 @@ public class TextToSpeechServiceTests
             var result = await svc.SynthesizeAsync("Olá, este é um teste de síntese de voz.");
 
             Assert.False(string.IsNullOrWhiteSpace(result));
-            var wavPath = result + ".wav";
-            Assert.True(File.Exists(wavPath), $"Arquivo WAV não encontrado em: {wavPath}");
+            var slnPath = result + ".sln";
+            Assert.True(File.Exists(slnPath), $"Arquivo SLN não encontrado em: {slnPath}");
 
-            var info = new FileInfo(wavPath);
-            Assert.True(info.Length > 0, "Arquivo WAV gerado está vazio.");
+            var info = new FileInfo(slnPath);
+            Assert.True(info.Length > 0, "Arquivo SLN gerado está vazio.");
         }
         finally
         {

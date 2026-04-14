@@ -91,6 +91,43 @@ public sealed class DecisionEngineTests
         Assert.Equal("LLM-Normalized", result.CamadaResolucao);
     }
 
+    [Fact]
+    public async Task ProcessAsync_SlotFillingResidentOnly_DoesNotMirrorResidentIntoVisitorName()
+    {
+        var regexResult = new ProcessingLayerResult
+        {
+            Camada = "Regex",
+            Confianca = 0.20,
+            Intencao = Intencao.Identificacao,
+            DadosExtraidos = new DadosExtraidos
+            {
+                Nome = "Giovana",
+                NomeVisitante = null,
+                Unidade = "214",
+                Bloco = "12"
+            }
+        };
+
+        var sut = CreateSut(
+            regexProcessor: new StubRegexProcessor(regexResult),
+            nlpProcessor: new StubNlpProcessor(new ProcessingLayerResult { Camada = "NLP-Heuristic", Confianca = 0.0, DadosExtraidos = new DadosExtraidos() }));
+
+        var result = await sut.ProcessAsync(new InferenceRequest
+        {
+            Texto = "Giovana apartamento 214 bloco 12",
+            TenantType = "residential",
+            SessionId = "test-session",
+            Metadata = new Dictionary<string, string>
+            {
+                ["slotFilling"] = "true"
+            }
+        }, CancellationToken.None);
+
+        Assert.Equal("SlotFilling-FastPath", result.CamadaResolucao);
+        Assert.Equal("Giovana", result.DadosExtraidos.Nome);
+        Assert.Null(result.DadosExtraidos.NomeVisitante);
+    }
+
     private static DecisionEngine CreateSut(
         IRegexProcessor regexProcessor = null,
         INlpProcessor nlpProcessor = null,

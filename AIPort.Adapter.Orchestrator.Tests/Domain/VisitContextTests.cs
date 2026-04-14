@@ -20,4 +20,45 @@ public sealed class VisitContextTests
         Assert.Null(context.ResidentName);
         Assert.True(context.HasChangedSinceLastMerge);
     }
+
+    [Fact]
+    public void MergeFrom_VisitorNameThenResidentName_PreservesBothRoles()
+    {
+        var context = new VisitContext();
+
+        context.MergeFrom(new DadosExtraidosDto
+        {
+            NomeVisitante = "Fernando",
+            TemDadosExtraidos = true
+        });
+
+        context.MergeFrom(new DadosExtraidosDto
+        {
+            Nome = "Giovana",
+            TemDadosExtraidos = true
+        });
+
+        Assert.Equal("Fernando", context.VisitorName);
+        Assert.Equal("Giovana", context.ResidentName);
+    }
+
+    [Fact]
+    public void MergeFrom_ResidentNameWithDuplicatedVisitorField_UsesExistingVisitorAsReference()
+    {
+        var context = new VisitContext
+        {
+            VisitorName = "João Pedro"
+        };
+
+        context.MergeFrom(new DadosExtraidosDto
+        {
+            Nome = "Rodrigo",
+            NomeVisitante = "Rodrigo",
+            TemDadosExtraidos = true
+        });
+
+        Assert.Equal("João Pedro", context.VisitorName);
+        Assert.Equal("Rodrigo", context.ResidentName);
+        Assert.True(context.HasChangedSinceLastMerge);
+    }
 }

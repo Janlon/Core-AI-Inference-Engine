@@ -330,7 +330,7 @@ public sealed class LlmEngine : ILlmProcessor
                 DadosExtraidos = new()
                 {
                     Nome = dto.DadosExtraidos?.Nome ?? estado.NomeDetectado,
-                    NomeVisitante = dto.DadosExtraidos?.NomeVisitante ?? estado.NomeVisitanteDetectado ?? estado.NomeDetectado,
+                    NomeVisitante = dto.DadosExtraidos?.NomeVisitante ?? estado.NomeVisitanteDetectado,
                     Documento = dto.DadosExtraidos?.Documento ?? estado.DocumentoDetectado,
                     Cpf = dto.DadosExtraidos?.Cpf ?? estado.CpfDetectado,
                     Unidade = dto.DadosExtraidos?.Unidade ?? estado.UnidadeDetectada,

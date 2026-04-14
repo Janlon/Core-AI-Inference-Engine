@@ -338,10 +338,11 @@ public sealed partial class RegexEngine : IRegexProcessor
         else if (!string.IsNullOrWhiteSpace(nomeVisitante))
             nome = nomeVisitante;
 
-        if (nomeVisitante is null && nome is not null)
+        if (nomeVisitante is null && nome is not null && string.IsNullOrWhiteSpace(nomeVisitado))
         {
             // fallback: quando nao identificamos explicitamente o visitante,
-            // mantemos compatibilidade usando o nome geral.
+            // mantemos compatibilidade usando o nome geral, desde que ele
+            // nao tenha sido identificado como o morador visitado.
             nomeVisitante = nome;
         }
 
@@ -420,7 +421,7 @@ public sealed partial class RegexEngine : IRegexProcessor
             DadosExtraidos = new()
             {
                 Nome = nome,
-                NomeVisitante = nomeVisitante ?? nome,
+                NomeVisitante = nomeVisitante,
                 Documento = documento,
                 Cpf = cpf,
                 Unidade = unidade,

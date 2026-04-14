@@ -37,4 +37,6 @@ public sealed class AgiCallContext
     public string? FinalReasonCategory { get; set; }
 
     public string? FinalReasonMessage { get; set; }
+
+    public InferenceResponseDto? ResidentialValidatedInference { get; set; }
 }

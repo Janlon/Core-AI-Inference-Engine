@@ -37,6 +37,14 @@ public sealed class OrchestrationService : IOrchestrationService
         @"^[A-Za-z0-9]{1,10}$",
         RegexOptions.Compiled);
 
+    private static readonly Regex KinshipPattern = new(
+        @"\b(?:(?:meu|minha)\s+)?(pai|mae|mãe|filho|filha|irmao|irmão|irma|irmã|esposo|esposa|marido|namorado|namorada|tio|tia|primo|prima|av[oô]|avo|sogro|sogra)\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex LeadingRelationPrefixPattern = new(
+        @"^(?:(?:meu|minha)\s+)?(?:pai|mae|mãe|filho|filha|irmao|irmão|irma|irmã|esposo|esposa|marido|namorado|namorada|tio|tia|primo|prima|av[oô]|avo|sogro|sogra)\s+",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     private readonly ITenantRepository _tenantRepository;
     private readonly ICallSessionRepository _callSessionRepository;
     private readonly ISpeechToTextService _stt;
@@ -83,6 +91,7 @@ public sealed class OrchestrationService : IOrchestrationService
         string? texto = null;
         string acaoExecutada = "NAO_EXECUTADO";
         string respostaFalada = string.Empty;
+        var callEndPublished = false;
 
         _logger.LogInformation(
             "Iniciando orquestração Session={SessionId} TenantPid={TenantPid} CallerId={CallerId} Channel={Channel}",
@@ -199,27 +208,11 @@ public sealed class OrchestrationService : IOrchestrationService
             {
                 var ctx = call.VisitContext;
                 _logger.LogInformation(
-                    "Slot-filling completo Session={SessionId} — bypassando inferência e notificando morador.",
+                    "Slot-filling completo Session={SessionId} — executando validação final via IA antes de notificar morador.",
                     call.SessionId);
 
-                iaResponse = new InferenceResponseDto
-                {
-                    Intencao          = "VISITA_RESIDENCIAL",
-                    AcaoSugerida      = "NOTIFICAR_MORADOR",
-                    RespostaTexto     = "Aguarde, estamos notificando o morador.",
-                    CamadaResolucao   = "SLOT_FILLING",
-                    Confianca         = 1.0,
-                    DadosExtraidos    = new DadosExtraidosDto
-                    {
-                        NomeVisitante      = ctx.VisitorName,
-                        Nome               = ctx.ResidentName,
-                        Unidade            = ctx.Apartment,
-                        Bloco              = ctx.Block,
-                        Torre              = ctx.Tower,
-                        Documento          = ctx.Document,
-                        TemDadosExtraidos  = true
-                    }
-                };
+                iaResponse = call.ResidentialValidatedInference
+                    ?? await ValidateCompletedResidentialVisitAsync(call, tenant, ctx, ct);
             }
             else if (call.EscalateDueToSilence)
             {
@@ -304,6 +297,9 @@ public sealed class OrchestrationService : IOrchestrationService
                 }
             );
 
+            _eventService.PublishCallEnded(tenant.NomeIdentificador, execution.AcaoExecutada);
+            callEndPublished = true;
+
             return new CallOrchestrationResult
             {
                 SessionId = call.SessionId,
@@ -326,6 +322,7 @@ public sealed class OrchestrationService : IOrchestrationService
             _logger.LogInformation("Canal AGI encerrado pelo Asterisk durante atendimento Session={SessionId}.", call.SessionId);
 
             _eventService.PublishCallEnded(tenant?.NomeIdentificador ?? "Desconhecido", "Hangup pelo Asterisk");
+            callEndPublished = true;
 
             return new CallOrchestrationResult
             {
@@ -358,6 +355,11 @@ public sealed class OrchestrationService : IOrchestrationService
         }
         finally
         {
+            if (!callEndPublished && tenant is not null)
+            {
+                _eventService.PublishCallEnded(tenant.NomeIdentificador, call.FinalReasonMessage ?? acaoExecutada);
+            }
+
             if (callSession is not null)
             {
                 try
@@ -525,6 +527,10 @@ public sealed class OrchestrationService : IOrchestrationService
         var conversation = new List<string>();
         var consecutiveSilentRounds = 0;
         const int maxConsecutiveSilentRounds = 1;
+        string? finalValidationPromptOverride = null;
+        string? finalValidationExpectedSlotOverride = null;
+        var finalValidationFollowUpRounds = 0;
+        const int maxFinalValidationFollowUpRounds = 2;
 
         var greetingMessage = BuildGreetingMessage(tenant, responses);
         await PlayPromptAsync(call, greetingMessage, ct);
@@ -532,14 +538,30 @@ public sealed class OrchestrationService : IOrchestrationService
         const int maxRounds = 8;
         for (int round = 0; round < maxRounds; round++)
         {
-            if (context.IsComplete)
-                break;
+            if (context.IsComplete && finalValidationPromptOverride is null)
+            {
+                var validationResponse = await ValidateCompletedResidentialVisitAsync(call, tenant, context, ct);
 
-            var nextPrompt = context.GetNextPrompt();
+                if (ShouldCollectAdditionalResidentialInfo(validationResponse)
+                    && finalValidationFollowUpRounds < maxFinalValidationFollowUpRounds)
+                {
+                    finalValidationPromptOverride = validationResponse.RespostaTexto;
+                    finalValidationExpectedSlotOverride = DeriveResidentialFollowUpSlot(context, validationResponse);
+                    finalValidationFollowUpRounds++;
+                    call.ResidentialValidatedInference = null;
+                }
+                else
+                {
+                    call.ResidentialValidatedInference = validationResponse;
+                    break;
+                }
+            }
+
+            var nextPrompt = finalValidationPromptOverride ?? context.GetNextPrompt();
             if (nextPrompt is null)
                 break;
 
-            var expectedSlot = GetExpectedSlot(context);
+            var expectedSlot = finalValidationExpectedSlotOverride ?? GetExpectedSlot(context);
             var promptToUse = context.GetConfirmationPrompt() ?? nextPrompt;
             var capture = await AskAndCaptureAsync(call, promptToUse, ct);
             var answer = capture.Transcript;
@@ -608,6 +630,9 @@ public sealed class OrchestrationService : IOrchestrationService
                     llmProcessingTimeMs = llmTimer.ElapsedMilliseconds;
                 }
             }
+
+            finalValidationPromptOverride = null;
+            finalValidationExpectedSlotOverride = null;
 
             var normalizedAnswer = NormalizeUserInput(answer);
 
@@ -888,12 +913,14 @@ public sealed class OrchestrationService : IOrchestrationService
             Bloco = context.Block,
             Torre = context.Tower,
             Documento = context.Document,
+            Parentesco = context.Parentesco,
             TemDadosExtraidos = !string.IsNullOrWhiteSpace(context.VisitorName)
                 || !string.IsNullOrWhiteSpace(context.ResidentName)
                 || !string.IsNullOrWhiteSpace(context.Apartment)
                 || !string.IsNullOrWhiteSpace(context.Block)
                 || !string.IsNullOrWhiteSpace(context.Tower)
                 || !string.IsNullOrWhiteSpace(context.Document)
+                || !string.IsNullOrWhiteSpace(context.Parentesco)
         };
     }
 
@@ -1009,6 +1036,8 @@ public sealed class OrchestrationService : IOrchestrationService
 
         DadosExtraidosDto? extracted = expectedSlot switch
         {
+            "ResidentName" => ExtractResidentContextData(normalizedAnswer),
+            "ResidentContext" => ExtractResidentContextData(normalizedAnswer),
             "Apartment" => ExtractApartmentData(normalizedAnswer),
             "Block" => ExtractSingleTokenSlot(normalizedAnswer, "Block"),
             "Tower" => ExtractSingleTokenSlot(normalizedAnswer, "Tower"),
@@ -1049,6 +1078,22 @@ public sealed class OrchestrationService : IOrchestrationService
         };
     }
 
+    private static DadosExtraidosDto? ExtractResidentContextData(string answer)
+    {
+        var parentesco = ExtractParentesco(answer);
+        var nameCandidate = NormalizeResidentName(answer, parentesco);
+
+        if (string.IsNullOrWhiteSpace(nameCandidate) && string.IsNullOrWhiteSpace(parentesco))
+            return null;
+
+        return new DadosExtraidosDto
+        {
+            Nome = nameCandidate,
+            Parentesco = parentesco,
+            TemDadosExtraidos = true
+        };
+    }
+
     private static DadosExtraidosDto? ExtractSingleTokenSlot(string answer, string slotName)
     {
         var explicitValue = slotName switch
@@ -1081,6 +1126,141 @@ public sealed class OrchestrationService : IOrchestrationService
             Cpf = document.Length == 11 ? document : null,
             TemDadosExtraidos = true
         };
+    }
+
+    private static string? ExtractParentesco(string answer)
+    {
+        var match = KinshipPattern.Match(answer);
+        if (!match.Success)
+            return null;
+
+        return match.Groups[1].Value.Trim();
+    }
+
+    private static string? NormalizeResidentName(string answer, string? parentesco)
+    {
+        var candidate = answer.Trim();
+
+        if (!string.IsNullOrWhiteSpace(parentesco))
+            candidate = LeadingRelationPrefixPattern.Replace(candidate, string.Empty).Trim();
+
+        return string.IsNullOrWhiteSpace(candidate) ? null : candidate;
+    }
+
+    private async Task<InferenceResponseDto> ValidateCompletedResidentialVisitAsync(
+        AgiCallContext call,
+        Tenant tenant,
+        VisitContext context,
+        CancellationToken ct)
+    {
+        var tenantType = MapTenantType(tenant.TipoLocal);
+        var validationText = BuildResidentialValidationSummary(context);
+        var validationRequest = new InferenceRequestDto
+        {
+            Texto = validationText,
+            TenantType = tenantType,
+            SessionId = call.SessionId,
+            Metadata = BuildInferenceMetadata(call, tenant)
+                .Concat(new Dictionary<string, string>
+                {
+                    ["finalValidation"] = "true",
+                    ["validationSource"] = "residential-slot-filling"
+                })
+                .ToDictionary(kv => kv.Key, kv => kv.Value)
+        };
+
+        var validationResponse = await _intelligence.ProcessAsync(validationRequest, ct);
+        ApplyValidatedResidentialData(context, validationResponse.DadosExtraidos);
+
+        var mergedData = BuildVisitContextSnapshot(context);
+        return validationResponse with
+        {
+            DadosExtraidos = mergedData,
+            CamadaResolucao = string.IsNullOrWhiteSpace(validationResponse.CamadaResolucao)
+                ? "SLOT_FILLING_FINAL_VALIDATION"
+                : validationResponse.CamadaResolucao
+        };
+    }
+
+    private static void ApplyValidatedResidentialData(VisitContext context, DadosExtraidosDto dados)
+    {
+        if (!string.IsNullOrWhiteSpace(dados.NomeVisitante))
+            context.VisitorName = dados.NomeVisitante;
+
+        if (!string.IsNullOrWhiteSpace(dados.Nome) && !string.Equals(dados.Nome, context.VisitorName, StringComparison.OrdinalIgnoreCase))
+            context.ResidentName = dados.Nome;
+
+        if (!string.IsNullOrWhiteSpace(dados.Unidade))
+            context.Apartment = dados.Unidade;
+
+        if (!string.IsNullOrWhiteSpace(dados.Bloco))
+            context.Block = dados.Bloco;
+
+        if (!string.IsNullOrWhiteSpace(dados.Torre))
+            context.Tower = dados.Torre;
+
+        if (!string.IsNullOrWhiteSpace(dados.Documento))
+            context.Document = dados.Documento;
+        else if (!string.IsNullOrWhiteSpace(dados.Cpf))
+            context.Document = dados.Cpf;
+
+        if (!string.IsNullOrWhiteSpace(dados.Parentesco))
+            context.Parentesco = dados.Parentesco;
+    }
+
+    private static string BuildResidentialValidationSummary(VisitContext context)
+    {
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(context.VisitorName))
+            parts.Add($"Visitante: {context.VisitorName}.");
+
+        if (!string.IsNullOrWhiteSpace(context.ResidentName))
+            parts.Add($"Morador: {context.ResidentName}.");
+
+        if (!string.IsNullOrWhiteSpace(context.Parentesco))
+            parts.Add($"Parentesco: {context.Parentesco}.");
+
+        if (!string.IsNullOrWhiteSpace(context.Apartment))
+            parts.Add($"Apartamento: {context.Apartment}.");
+
+        if (!string.IsNullOrWhiteSpace(context.Block))
+            parts.Add($"Bloco: {context.Block}.");
+
+        if (!string.IsNullOrWhiteSpace(context.Tower))
+            parts.Add($"Torre: {context.Tower}.");
+
+        if (!string.IsNullOrWhiteSpace(context.Document))
+            parts.Add($"Documento: {context.Document}.");
+
+        return string.Join(" ", parts);
+    }
+
+    private static bool ShouldCollectAdditionalResidentialInfo(InferenceResponseDto response)
+    {
+        var action = response.AcaoSugerida?.Trim().ToUpperInvariant();
+        return action is "SOLICITAR_IDENTIFICACAO" or "SOLICITAR_DOC";
+    }
+
+    private static string DeriveResidentialFollowUpSlot(VisitContext context, InferenceResponseDto response)
+    {
+        var action = response.AcaoSugerida?.Trim().ToUpperInvariant();
+        if (action == "SOLICITAR_DOC")
+            return "Document";
+
+        if (string.IsNullOrWhiteSpace(context.ResidentName) || string.IsNullOrWhiteSpace(context.Parentesco))
+            return "ResidentContext";
+
+        if (string.IsNullOrWhiteSpace(context.Apartment))
+            return "Apartment";
+
+        if (context.RequiresBlock && string.IsNullOrWhiteSpace(context.Block))
+            return "Block";
+
+        if (context.RequiresTower && string.IsNullOrWhiteSpace(context.Tower))
+            return "Tower";
+
+        return "ResidentContext";
     }
 
     private static string? ExtractPatternValue(Regex pattern, string answer)

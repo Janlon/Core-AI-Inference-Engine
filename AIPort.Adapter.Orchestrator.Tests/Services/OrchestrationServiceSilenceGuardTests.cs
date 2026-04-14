@@ -73,7 +73,7 @@ public sealed class OrchestrationServiceSilenceGuardTests
             .ReturnsAsync(2);
 
         callSessionRepository
-            .Setup(x => x.CompleteSessionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.CompleteSessionAsync(It.IsAny<string>(), It.IsAny<CallSessionFinalizationAudit>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         InferenceResponseDto? capturedInference = null;
@@ -187,7 +187,7 @@ public sealed class OrchestrationServiceSilenceGuardTests
             .ReturnsAsync(6);
 
         callSessionRepository
-            .Setup(x => x.CompleteSessionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.CompleteSessionAsync(It.IsAny<string>(), It.IsAny<CallSessionFinalizationAudit>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         InferenceResponseDto? capturedInference = null;
@@ -283,7 +283,7 @@ public sealed class OrchestrationServiceSilenceGuardTests
             .ReturnsAsync(5);
 
         callSessionRepository
-            .Setup(x => x.CompleteSessionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.CompleteSessionAsync(It.IsAny<string>(), It.IsAny<CallSessionFinalizationAudit>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         InferenceResponseDto? capturedInference = null;
@@ -433,8 +433,8 @@ public sealed class OrchestrationServiceSilenceGuardTests
 
         string? capturedFinalJson = null;
         callSessionRepository
-            .Setup(x => x.CompleteSessionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
-            .Callback<string, string, string, DateTime, CancellationToken>((_, _, finalJson, _, _) => capturedFinalJson = finalJson)
+            .Setup(x => x.CompleteSessionAsync(It.IsAny<string>(), It.IsAny<CallSessionFinalizationAudit>(), It.IsAny<CancellationToken>()))
+            .Callback<string, CallSessionFinalizationAudit, CancellationToken>((_, audit, _) => capturedFinalJson = audit.FinalExtractedData)
             .Returns(Task.CompletedTask);
 
         executor

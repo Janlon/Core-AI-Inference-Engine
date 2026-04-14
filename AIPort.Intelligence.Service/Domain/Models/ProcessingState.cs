@@ -43,7 +43,7 @@ public sealed class ProcessingState
     public DadosExtraidos ToDadosExtraidos() => new()
     {
         Nome = NomeDetectado,
-        NomeVisitante = NomeVisitanteDetectado ?? NomeDetectado,
+        NomeVisitante = NomeVisitanteDetectado,
         Documento = DocumentoDetectado,
         Cpf = CpfDetectado,
         Unidade = UnidadeDetectada,

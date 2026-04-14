@@ -1,3 +1,4 @@
+using AIPort.Adapter.Orchestrator.Agi.Models;
 using AIPort.Adapter.Orchestrator.Data;
 using AIPort.Adapter.Orchestrator.Agi.Interfaces;
 using AIPort.Adapter.Orchestrator.Config;
@@ -110,6 +111,7 @@ public sealed class HealthCheckService : IHealthCheckService
     {
         var databaseHealth = await CheckDatabaseHealthAsync(1, cancellationToken);
         var activeCalls = _agiRuntimeState.ActiveChannels;
+        var activeChannelDetails = _agiRuntimeState.GetActiveChannelSnapshots() ?? Array.Empty<ActiveAgiChannelSnapshot>();
         var aiHealth = await ProbeIntelligenceServiceAsync(cancellationToken);
         var systemTelemetry = await _systemTelemetryProvider.GetSnapshotAsync(cancellationToken);
         var speechWarmup = _speechWarmupStatusProvider.GetCurrent();
@@ -139,7 +141,8 @@ public sealed class HealthCheckService : IHealthCheckService
                 host = _agiRuntimeState.Host,
                 enabled = _agiRuntimeState.IsEnabled,
                 listening = _agiRuntimeState.IsListening,
-                activeCalls
+                activeCalls,
+                activeChannelDetails
             },
             ["database"] = new
             {

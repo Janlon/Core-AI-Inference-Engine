@@ -18,7 +18,7 @@ public class RegexEngineIntegrationTests
     [Theory]
     [InlineData("Oi, sou João, vim visitar o apartamento 204 bloco 12.", "João", "204", "12", null, null, false, false)]
     [InlineData("Boa noite, aqui é Maria, entrega do iFood para o 305.", "Maria", "305", null, null, null, false, true)]
-    [InlineData("Quero falar com o Pedro na torre B.", "Pedro", null, null, "B", null, false, false)]
+    [InlineData("Quero falar com o Pedro na torre B.", null, null, null, "B", null, false, false)]
     [InlineData("Sou Ana, vim para a festa da família no bloco 3.", "Ana", null, "3", null, null, false, false)]
     [InlineData("Entregador, pedido para o apartamento 101.", null, "101", null, null, null, false, true)]
     [InlineData("entrega", null, null, null, null, null, false, true)]
@@ -104,5 +104,19 @@ public class RegexEngineIntegrationTests
         Assert.Contains(result.Debug.RegexMatches, match => match.Rule == "NomePattern" && match.Value == "João");
         Assert.Contains(result.Debug.RegexMatches, match => match.Rule == "UnidadePattern_Novo" && match.Value == "204");
         Assert.Contains(result.Debug.RegexMatches, match => match.Rule == "BlocoPattern" && match.Value == "12");
+    }
+
+    [Fact]
+    public async Task RegexEngine_ResidentNamePhrase_DoesNotPopulateVisitorName()
+    {
+        var engine = CreateEngine();
+
+        var result = await engine.ProcessAsync("Quero visitar a Giovana no apartamento 214 bloco 12.");
+
+        Assert.Equal("Giovana", result.DadosExtraidos.Nome);
+        Assert.Null(result.DadosExtraidos.NomeVisitante);
+        Assert.Equal("214", result.DadosExtraidos.Unidade);
+        Assert.Equal("12", result.DadosExtraidos.Bloco);
+        Assert.Contains(result.Debug!.RegexMatches, match => match.Rule == "NomeVisitadoPattern" && match.Value == "Giovana");
     }
 }

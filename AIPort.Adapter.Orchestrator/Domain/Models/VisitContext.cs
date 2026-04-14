@@ -23,6 +23,7 @@ public sealed class VisitContext
     public string? Block        { get; set; }
     public string? Tower        { get; set; }
     public string? Document     { get; set; }
+    public string? Parentesco   { get; set; }
 
     /// <summary>
     /// Rastreia as últimas 3 respostas para detectar loops e repetições.
@@ -90,7 +91,7 @@ public sealed class VisitContext
             }
             else if (
                 string.IsNullOrWhiteSpace(ResidentName)
-                && !string.Equals(incomingResidentCandidate, incomingVisitorName ?? VisitorName, StringComparison.OrdinalIgnoreCase))
+                && !string.Equals(incomingResidentCandidate, VisitorName, StringComparison.OrdinalIgnoreCase))
             {
                 ResidentName = incomingResidentCandidate;
                 HasChangedSinceLastMerge = true;
@@ -127,6 +128,12 @@ public sealed class VisitContext
                 Document = dados.Cpf;
                 HasChangedSinceLastMerge = true;
             }
+        }
+
+        if (string.IsNullOrWhiteSpace(Parentesco) && !string.IsNullOrWhiteSpace(dados.Parentesco))
+        {
+            Parentesco = dados.Parentesco;
+            HasChangedSinceLastMerge = true;
         }
     }
 

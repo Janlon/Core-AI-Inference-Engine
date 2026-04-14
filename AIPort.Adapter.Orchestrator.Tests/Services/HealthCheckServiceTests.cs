@@ -2,6 +2,7 @@ using System.Data;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using AIPort.Adapter.Orchestrator.Agi.Models;
 using AIPort.Adapter.Orchestrator.Agi.Interfaces;
 using AIPort.Adapter.Orchestrator.Config;
 using AIPort.Adapter.Orchestrator.Data;
@@ -28,6 +29,7 @@ public sealed class HealthCheckServiceTests
         runtimeState.SetupGet(x => x.Host).Returns("127.0.0.1");
         runtimeState.SetupGet(x => x.Port).Returns(4573);
         runtimeState.SetupGet(x => x.ActiveChannels).Returns(0);
+        runtimeState.Setup(x => x.GetActiveChannelSnapshots()).Returns(Array.Empty<ActiveAgiChannelSnapshot>());
 
         httpClientFactory
             .Setup(x => x.CreateClient(It.IsAny<string>()))
@@ -67,6 +69,11 @@ public sealed class HealthCheckServiceTests
         runtimeState.SetupGet(x => x.Host).Returns("127.0.0.1");
         runtimeState.SetupGet(x => x.Port).Returns(4573);
         runtimeState.SetupGet(x => x.ActiveChannels).Returns(2);
+        runtimeState.Setup(x => x.GetActiveChannelSnapshots()).Returns(new[]
+        {
+            new ActiveAgiChannelSnapshot("c1", new DateTime(2026, 4, 8, 12, 0, 0, DateTimeKind.Utc), "10.0.0.10:4000", "s1", "100", "PJSIP/100-00000001", 200),
+            new ActiveAgiChannelSnapshot("c2", new DateTime(2026, 4, 8, 12, 0, 2, DateTimeKind.Utc), "10.0.0.11:4001", "s2", "101", "PJSIP/101-00000002", 200)
+        });
 
         httpClientFactory
             .Setup(x => x.CreateClient(It.IsAny<string>()))
@@ -98,6 +105,11 @@ public sealed class HealthCheckServiceTests
 
         var status = await sut.GetHealthStatusAsync();
 
+        var asterisk = status["asterisk"];
+        var details = asterisk.GetType().GetProperty("activeChannelDetails")?.GetValue(asterisk) as IReadOnlyCollection<ActiveAgiChannelSnapshot>;
+        Assert.NotNull(details);
+        Assert.Equal(2, details!.Count);
+
         var system = status["system"];
         var systemType = system.GetType();
         Assert.Equal("healthy", systemType.GetProperty("status")?.GetValue(system));
@@ -124,6 +136,7 @@ public sealed class HealthCheckServiceTests
         runtimeState.SetupGet(x => x.Host).Returns("127.0.0.1");
         runtimeState.SetupGet(x => x.Port).Returns(4573);
         runtimeState.SetupGet(x => x.ActiveChannels).Returns(1);
+        runtimeState.Setup(x => x.GetActiveChannelSnapshots()).Returns(Array.Empty<ActiveAgiChannelSnapshot>());
 
         httpClientFactory
             .Setup(x => x.CreateClient(It.IsAny<string>()))

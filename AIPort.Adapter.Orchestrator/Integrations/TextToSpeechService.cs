@@ -9,18 +9,28 @@ namespace AIPort.Adapter.Orchestrator.Integrations;
 public sealed class TextToSpeechService : ITextToSpeechService
 {
     private readonly SpeechOptions _options;
+    private readonly RuntimeInputOptions _runtimeOptions;
     private readonly ILogger<TextToSpeechService> _logger;
     private readonly SemaphoreSlim _googleClientLock = new(1, 1);
     private TextToSpeechClient? _googleClient;
 
-    public TextToSpeechService(IOptions<SpeechOptions> options, ILogger<TextToSpeechService> logger)
+    public TextToSpeechService(
+        IOptions<SpeechOptions> options,
+        IOptions<RuntimeInputOptions> runtimeOptions,
+        ILogger<TextToSpeechService> logger)
     {
         _options = options.Value;
+        _runtimeOptions = runtimeOptions.Value;
         _logger = logger;
     }
 
     public async Task<string> SynthesizeAsync(string text, CancellationToken ct = default)
     {
+        if (IsDeveloperSandboxMode())
+        {
+            return "sandbox-tts://" + Uri.EscapeDataString(text);
+        }
+
         if (IsAsteriskProvider())
         {
             var app = string.IsNullOrWhiteSpace(_options.Asterisk.TtsApplication)
@@ -37,7 +47,7 @@ public sealed class TextToSpeechService : ITextToSpeechService
         Directory.CreateDirectory(tempDir);
 
         var fileNoExt = Path.Combine(tempDir, $"tts-{Guid.NewGuid():N}");
-        var filePath = fileNoExt + ".slin";
+        var filePath = fileNoExt + ".sln";
 
         var timer = Stopwatch.StartNew();
         var wavBytes = await SynthesizeGoogleAudioAsync(text, AudioEncoding.Linear16, ct);
@@ -45,7 +55,7 @@ public sealed class TextToSpeechService : ITextToSpeechService
         await File.WriteAllBytesAsync(filePath, pcmBytes, ct);
         timer.Stop();
 
-        _logger.LogInformation("TTS gerado em {Path} (PCM/slin 8kHz mono, {Bytes} bytes, {ElapsedMs} ms)", filePath, pcmBytes.Length, timer.ElapsedMilliseconds);
+        _logger.LogInformation("TTS gerado em {Path} (PCM/sln 8kHz mono, {Bytes} bytes, {ElapsedMs} ms)", filePath, pcmBytes.Length, timer.ElapsedMilliseconds);
         return fileNoExt;
     }
 
@@ -218,6 +228,9 @@ public sealed class TextToSpeechService : ITextToSpeechService
 
     private bool IsAsteriskProvider() =>
         _options.TtsProvider == TtsProviderType.Asterisk;
+
+    private bool IsDeveloperSandboxMode() =>
+        _runtimeOptions.InputSourceMode is InputSourceMode.WindowsText or InputSourceMode.WindowsVoice;
 
     private string ResolveTempDirectory()
     {
