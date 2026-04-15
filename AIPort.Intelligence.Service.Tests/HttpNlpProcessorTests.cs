@@ -85,9 +85,11 @@ public sealed class HttpNlpProcessorTests
 
         Assert.NotNull(capturedBody);
         Assert.Contains("\"Texto\":\"meu nome e Carlos, apartamento 204\"", capturedBody, StringComparison.Ordinal);
+        Assert.Contains("\"OriginalText\":\"meu nome e Carlos, apartamento 204\"", capturedBody, StringComparison.Ordinal);
         Assert.Contains("\"TenantType\":\"residential\"", capturedBody, StringComparison.Ordinal);
         Assert.Contains("\"SessionId\":\"sessao-1\"", capturedBody, StringComparison.Ordinal);
         Assert.Contains("\"origem\":\"teste\"", capturedBody, StringComparison.Ordinal);
+        Assert.Contains("\"CurrentState\"", capturedBody, StringComparison.Ordinal);
 
         Assert.Equal(Intencao.Identificacao, result.Intencao);
         Assert.Equal("Carlos", result.DadosExtraidos.Nome);

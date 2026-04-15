@@ -27,6 +27,7 @@ public sealed class DeveloperSandboxHostedService : BackgroundService
     private readonly ILogger<DeveloperSandboxHostedService> _logger;
     private int _tenantPid;
     private InputSourceMode _activeInputMode;
+    private bool VerboseConsoleOutput => _runtimeOptions.DeveloperSandbox.VerboseConsoleOutput;
 
     public DeveloperSandboxHostedService(
         IServiceScopeFactory scopeFactory,
@@ -341,7 +342,7 @@ public sealed class DeveloperSandboxHostedService : BackgroundService
             throw new AgiHangupException("Sandbox finalizado pelo operador.");
         }
 
-        Console.WriteLine($"[Captured] {trimmed}");
+        WriteVerboseLine($"[Captured] {trimmed}");
         return trimmed;
     }
 
@@ -364,11 +365,11 @@ public sealed class DeveloperSandboxHostedService : BackgroundService
             StartedAtUtc = DateTimeOffset.UtcNow
         };
 
-        using var voiceChannel = new DeveloperSandboxVoiceChannel(context, CaptureVisitorInputAsync);
+        using var voiceChannel = new DeveloperSandboxVoiceChannel(context, CaptureVisitorInputAsync, VerboseConsoleOutput);
         context.VoiceChannel = voiceChannel;
 
-        Console.WriteLine();
-        Console.WriteLine($"[Call] iniciada Session={sessionId} TenantPid={_tenantPid}");
+        WriteVerboseLine();
+        WriteVerboseLine($"[Call] iniciada Session={sessionId} TenantPid={_tenantPid}");
 
         var result = await orchestrationService.HandleCallAsync(context, stoppingToken);
 
@@ -379,27 +380,38 @@ public sealed class DeveloperSandboxHostedService : BackgroundService
                 regexMatches.Select(match => string.IsNullOrWhiteSpace(match.Value)
                     ? match.Rule
                     : $"{match.Rule}={match.Value}"));
-            Console.WriteLine($"[Regex] {renderedMatches}");
+            WriteVerboseLine($"[Regex] {renderedMatches}");
         }
         else
         {
-            Console.WriteLine("[Regex] nenhum match capturado");
+            WriteVerboseLine("[Regex] nenhum match capturado");
         }
 
-        Console.WriteLine(
+        WriteVerboseLine(
             $"[Decision] sucesso={result.Sucesso} camada={result.CamadaResolucao ?? "--"} intencao={result.Intencao ?? "--"} acao={result.AcaoExecutada} confianca={(result.Confianca.HasValue ? result.Confianca.Value.ToString("P0") : "--")}");
 
         if (result.DadosExtraidos is not null)
-            Console.WriteLine($"[Entities] {JsonSerializer.Serialize(result.DadosExtraidos, SandboxJsonOptions)}");
+            WriteVerboseLine($"[Entities] {JsonSerializer.Serialize(result.DadosExtraidos, SandboxJsonOptions)}");
 
-        Console.WriteLine($"[Response] {result.RespostaFalada}");
+        WriteVerboseLine($"[Response] {result.RespostaFalada}");
 
         if (!result.Sucesso && !string.IsNullOrWhiteSpace(result.MotivoFalha))
-            Console.WriteLine($"[Failure] {result.MotivoFalha}");
+            WriteVerboseLine($"[Failure] {result.MotivoFalha}");
 
-        Console.WriteLine($"[Call] encerrada Session={sessionId} Acao={result.AcaoExecutada}");
+        WriteVerboseLine($"[Call] encerrada Session={sessionId} Acao={result.AcaoExecutada}");
 
-        Console.WriteLine();
+        WriteVerboseLine();
+    }
+
+    private void WriteVerboseLine(string? message = null)
+    {
+        if (!VerboseConsoleOutput)
+            return;
+
+        if (message is null)
+            Console.WriteLine();
+        else
+            Console.WriteLine(message);
     }
 
     private string BuildSessionId()
@@ -427,13 +439,16 @@ public sealed class DeveloperSandboxHostedService : BackgroundService
     {
         private readonly AgiCallContext _context;
         private readonly Func<CancellationToken, Task<string?>> _captureInputAsync;
+        private readonly bool _verboseConsoleOutput;
 
         public DeveloperSandboxVoiceChannel(
             AgiCallContext context,
-            Func<CancellationToken, Task<string?>> captureInputAsync)
+            Func<CancellationToken, Task<string?>> captureInputAsync,
+            bool verboseConsoleOutput)
         {
             _context = context;
             _captureInputAsync = captureInputAsync;
+            _verboseConsoleOutput = verboseConsoleOutput;
         }
 
         public Task<char?> ReadDigitAsync(int timeoutMs, CancellationToken ct = default)
@@ -447,7 +462,8 @@ public sealed class DeveloperSandboxHostedService : BackgroundService
                 ? prompt
                 : $"[audio] {filePath}";
 
-            Console.WriteLine($"[Porteiro] {rendered}");
+            if (_verboseConsoleOutput)
+                Console.WriteLine($"[Porteiro] {rendered}");
             return Task.FromResult(new VoiceChannelResponse(200, 0, null, rendered));
         }
 

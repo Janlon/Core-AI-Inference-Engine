@@ -49,6 +49,7 @@ public sealed class DecisionEngine : IDecisionEngine
         var tenantRule = _rulesLoader.GetRule(request.TenantType);
         var state = new ProcessingState(request.Texto, request.TenantType, request.SessionId, request.Metadata);
         DecisionDebugInfo? regexDebug = null;
+        var forceLlmValidation = IsFinalValidationRequest(request);
 
         _logger.LogInformation(
             "Iniciando decisão. SessionId={Session}, TenantType={Tenant}, AiProfile={Profile}, RegexThr={RegexThr:F2}, NlpThr={NlpThr:F2}, GlobalThr={GlobalThr:F2}",
@@ -62,15 +63,20 @@ public sealed class DecisionEngine : IDecisionEngine
         // ── Camada 1: Regex ──────────────────────────────────────────────────
         if (opts.Regex.Enabled)
         {
-            var regexResult = await _regexProcessor.ProcessAsync(request.Texto, ct);
+            var regexResult = NormalizeSlotFillingResult(
+                await _regexProcessor.ProcessAsync(request.Texto, ct),
+                request);
             regexDebug = regexResult.Debug;
             MergeIntoState(state, regexResult);
 
-            if (regexResult.Confianca >= thresholds.Regex)
+            if (regexResult.Confianca >= thresholds.Regex && !forceLlmValidation)
             {
                 _logger.LogInformation("Decisão resolvida pela camada Regex (confiança={C:P0}).", regexResult.Confianca);
                 return BuildDecision(regexResult, tenantRule, request.TenantType, regexDebug);
             }
+
+            if (regexResult.Confianca >= thresholds.Regex && forceLlmValidation)
+                _logger.LogInformation("Validação final detectada. Resultado da camada Regex será preservado no estado, mas o fluxo seguirá para LLM.");
         }
         else
         {
@@ -80,19 +86,24 @@ public sealed class DecisionEngine : IDecisionEngine
         // ── Camada 2: NLP ────────────────────────────────────────────────────
         if (opts.Nlp.Enabled)
         {
-            var nlpResult = await _nlpProcessor.ProcessAsync(request.Texto, state, ct);
+            var nlpResult = NormalizeSlotFillingResult(
+                await _nlpProcessor.ProcessAsync(request.Texto, state, ct),
+                request);
             MergeIntoState(state, nlpResult);
 
-            if (nlpResult.Confianca >= thresholds.Nlp)
+            if (nlpResult.Confianca >= thresholds.Nlp && !forceLlmValidation)
             {
                 _logger.LogInformation("Decisão resolvida pela camada NLP (confiança={C:P0}).", nlpResult.Confianca);
                 return BuildDecision(nlpResult, tenantRule, request.TenantType, regexDebug);
             }
+
+            if (nlpResult.Confianca >= thresholds.Nlp && forceLlmValidation)
+                _logger.LogInformation("Validação final detectada. Resultado da camada NLP será preservado no estado, mas o fluxo seguirá para LLM.");
         }
 
         // Durante slot-filling (rodadas curtas do orquestrador residencial),
         // prioriza extração rápida e evita custo/latência de LLM a cada turno.
-        if (IsSlotFillingRequest(request))
+        if (IsSlotFillingRequest(request) && !forceLlmValidation)
         {
             _logger.LogInformation(
                 "Slot-filling fast-path ativo. Retornando dados extraídos sem escalonar para LLM.");
@@ -110,7 +121,7 @@ public sealed class DecisionEngine : IDecisionEngine
         }
 
         // ── Camada 3: LLM ────────────────────────────────────────────────────
-        if (ShouldAskClarificationBeforeLlm(request.Texto, state))
+        if (!forceLlmValidation && ShouldAskClarificationBeforeLlm(request.Texto, state))
         {
             _logger.LogInformation("Entrada de baixa informação detectada. Evitando chamada ao LLM e solicitando confirmação ao visitante.");
             var clarification = new ProcessingLayerResult
@@ -322,6 +333,75 @@ public sealed class DecisionEngine : IDecisionEngine
             return false;
 
         if (!request.Metadata.TryGetValue("slotFilling", out var rawValue))
+            return false;
+
+        return bool.TryParse(rawValue, out var enabled) && enabled;
+    }
+
+    private static ProcessingLayerResult NormalizeSlotFillingResult(
+        ProcessingLayerResult result,
+        InferenceRequest request)
+    {
+        if (!IsSlotFillingRequest(request) || request.Metadata is null)
+            return result;
+
+        if (!request.Metadata.TryGetValue("expectedSlot", out var expectedSlotRaw))
+            return result;
+
+        var expectedSlot = expectedSlotRaw?.Trim();
+        if (string.IsNullOrWhiteSpace(expectedSlot))
+            return result;
+
+        var dados = result.DadosExtraidos;
+
+        return expectedSlot switch
+        {
+            "VisitorName" => result with
+            {
+                DadosExtraidos = dados with
+                {
+                    NomeVisitante = dados.NomeVisitante ?? dados.Nome,
+                    Nome = dados.NomeVisitante ?? dados.Nome
+                }
+            },
+
+            "ResidentName" or "ResidentContext" => result with
+            {
+                DadosExtraidos = dados with
+                {
+                    Nome = dados.Nome ?? dados.NomeVisitante,
+                    NomeVisitante = null
+                }
+            },
+
+            "Apartment" or "Block" or "Tower" or "Document" => result with
+            {
+                DadosExtraidos = dados with
+                {
+                    NomeVisitante = ShouldKeepVisitorAlias(dados, expectedSlot) ? dados.NomeVisitante : null
+                }
+            },
+
+            _ => result
+        };
+    }
+
+    private static bool ShouldKeepVisitorAlias(DadosExtraidos dados, string expectedSlot)
+    {
+        if (expectedSlot == "Document")
+            return false;
+
+        return !string.IsNullOrWhiteSpace(dados.NomeVisitante)
+            && !string.IsNullOrWhiteSpace(dados.Nome)
+            && !string.Equals(dados.NomeVisitante, dados.Nome, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsFinalValidationRequest(InferenceRequest request)
+    {
+        if (request.Metadata is null)
+            return false;
+
+        if (!request.Metadata.TryGetValue("finalValidation", out var rawValue))
             return false;
 
         return bool.TryParse(rawValue, out var enabled) && enabled;

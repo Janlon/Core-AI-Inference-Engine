@@ -128,6 +128,126 @@ public sealed class DecisionEngineTests
         Assert.Null(result.DadosExtraidos.NomeVisitante);
     }
 
+    [Fact]
+    public async Task ProcessAsync_FinalValidation_ForcesLlmEvenWhenRegexHasHighConfidence()
+    {
+        var regexResult = new ProcessingLayerResult
+        {
+            Camada = "Regex",
+            Confianca = 0.97,
+            Intencao = Intencao.Identificacao,
+            DadosExtraidos = new DadosExtraidos
+            {
+                NomeVisitante = "João Carlos da Silva",
+                Nome = "Rodrigo Rodrigues",
+                Unidade = "210",
+                Bloco = "12",
+                Documento = "212155500"
+            }
+        };
+
+        var llmResult = new ProcessingLayerResult
+        {
+            Camada = "LLM",
+            Confianca = 0.91,
+            Intencao = Intencao.Identificacao,
+            AcaoSugerida = AcaoSugerida.NOTIFICAR_MORADOR,
+            DadosExtraidos = new DadosExtraidos
+            {
+                NomeVisitante = "João Carlos da Silva",
+                Nome = "Rodrigo Rodrigues",
+                Unidade = "210",
+                Bloco = "12",
+                Documento = "212155500"
+            },
+            RespostaTexto = "Aguarde, estamos notificando o morador."
+        };
+
+        var sut = CreateSut(
+            regexProcessor: new StubRegexProcessor(regexResult),
+            nlpProcessor: new StubNlpProcessor(new ProcessingLayerResult { Camada = "NLP-Agent-Orchestrator", Confianca = 0.0, DadosExtraidos = new DadosExtraidos() }),
+            llmProcessor: new StubLlmProcessor(llmResult));
+
+        var result = await sut.ProcessAsync(new InferenceRequest
+        {
+            Texto = "Visitante: João Carlos da Silva. Morador: Rodrigo Rodrigues. Apartamento: 210. Bloco: 12. Documento: 212155500.",
+            TenantType = "residential",
+            SessionId = "test-session",
+            Metadata = new Dictionary<string, string>
+            {
+                ["finalValidation"] = "true",
+                ["validationSource"] = "residential-slot-filling"
+            }
+        }, CancellationToken.None);
+
+        Assert.Equal("LLM", result.CamadaResolucao);
+        Assert.Equal(AcaoSugerida.NOTIFICAR_MORADOR, result.AcaoSugerida);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_SlotFillingResidentRound_DoesNotExposeResidentAsVisitor()
+    {
+        var regexResult = new ProcessingLayerResult
+        {
+            Camada = "Regex",
+            Confianca = 0.97,
+            Intencao = Intencao.Identificacao,
+            DadosExtraidos = new DadosExtraidos
+            {
+                Nome = "Fernando",
+                NomeVisitante = "Fernando"
+            }
+        };
+
+        var sut = CreateSut(regexProcessor: new StubRegexProcessor(regexResult));
+
+        var result = await sut.ProcessAsync(new InferenceRequest
+        {
+            Texto = "Fernando",
+            TenantType = "residential",
+            SessionId = "test-session",
+            Metadata = new Dictionary<string, string>
+            {
+                ["slotFilling"] = "true",
+                ["expectedSlot"] = "ResidentName"
+            }
+        }, CancellationToken.None);
+
+        Assert.Equal("Fernando", result.DadosExtraidos.Nome);
+        Assert.Null(result.DadosExtraidos.NomeVisitante);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_SlotFillingVisitorRound_PopulatesVisitorAlias()
+    {
+        var regexResult = new ProcessingLayerResult
+        {
+            Camada = "Regex",
+            Confianca = 0.97,
+            Intencao = Intencao.Identificacao,
+            DadosExtraidos = new DadosExtraidos
+            {
+                Nome = "João"
+            }
+        };
+
+        var sut = CreateSut(regexProcessor: new StubRegexProcessor(regexResult));
+
+        var result = await sut.ProcessAsync(new InferenceRequest
+        {
+            Texto = "João",
+            TenantType = "residential",
+            SessionId = "test-session",
+            Metadata = new Dictionary<string, string>
+            {
+                ["slotFilling"] = "true",
+                ["expectedSlot"] = "VisitorName"
+            }
+        }, CancellationToken.None);
+
+        Assert.Equal("João", result.DadosExtraidos.NomeVisitante);
+    }
+
     private static DecisionEngine CreateSut(
         IRegexProcessor regexProcessor = null,
         INlpProcessor nlpProcessor = null,

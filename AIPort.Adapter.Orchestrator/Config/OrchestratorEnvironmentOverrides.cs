@@ -64,6 +64,7 @@ public static class OrchestratorEnvironmentOverrides
             ["DeveloperSandbox:Context"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_CONTEXT"),
             ["DeveloperSandbox:SessionPrefix"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_SESSION_PREFIX"),
             ["DeveloperSandbox:DisableWebhookCalls"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_DISABLE_WEBHOOK_CALLS"),
+            ["DeveloperSandbox:VerboseConsoleOutput"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_VERBOSE_CONSOLE_OUTPUT"),
             ["DeveloperSandbox:WindowsVoice:Provider"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_WINDOWS_VOICE_PROVIDER"),
             ["DeveloperSandbox:WindowsVoice:SubscriptionKey"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_WINDOWS_VOICE_SUBSCRIPTION_KEY"),
             ["DeveloperSandbox:WindowsVoice:Region"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_WINDOWS_VOICE_REGION"),

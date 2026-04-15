@@ -11,8 +11,12 @@ using Polly;
 using Polly.Extensions.Http;
 using Scalar.AspNetCore;
 using Microsoft.Extensions.Options;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
+
+Console.InputEncoding = Encoding.UTF8;
+Console.OutputEncoding = Encoding.UTF8;
 
 OrchestratorEnvironmentOverrides.Apply(builder.Configuration);
 var runtimeInputOptions = builder.Configuration.Get<RuntimeInputOptions>() ?? new RuntimeInputOptions();

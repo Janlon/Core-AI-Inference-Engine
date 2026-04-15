@@ -58,9 +58,25 @@ public sealed class HttpNlpProcessor : INlpProcessor
                 new ExternalInferenceRequest
                 {
                     Texto = texto,
+                    OriginalText = texto,
                     TenantType = estadoAtual.TenantType,
                     SessionId = estadoAtual.SessionId,
-                    Metadata = estadoAtual.Metadata
+                    Metadata = estadoAtual.Metadata,
+                    CurrentState = new ExternalDadosExtraidos
+                    {
+                        Nome = estadoAtual.NomeDetectado,
+                        NomeVisitante = estadoAtual.NomeVisitanteDetectado,
+                        Documento = estadoAtual.DocumentoDetectado,
+                        Cpf = estadoAtual.CpfDetectado,
+                        Unidade = estadoAtual.UnidadeDetectada,
+                        Bloco = estadoAtual.BlocoDetectado,
+                        Torre = estadoAtual.TorreDetectada,
+                        Empresa = estadoAtual.EmpresaDetectada,
+                        Parentesco = estadoAtual.ParentescoDetectado,
+                        EstaComVeiculo = estadoAtual.EstaComVeiculoDetectado ?? false,
+                        Placa = estadoAtual.PlacaDetectada,
+                        EEntregador = estadoAtual.EEntregadorDetectado ?? false
+                    }
                 },
                 options: SerializerOptions)
         };
@@ -129,9 +145,11 @@ public sealed class HttpNlpProcessor : INlpProcessor
     private sealed record ExternalInferenceRequest
     {
         public required string Texto { get; init; }
+        public string? OriginalText { get; init; }
         public required string TenantType { get; init; }
         public string? SessionId { get; init; }
         public IDictionary<string, string>? Metadata { get; init; }
+        public ExternalDadosExtraidos? CurrentState { get; init; }
     }
 
     private sealed record ExternalInferenceResponse

@@ -21,6 +21,7 @@ public sealed class DeveloperSandboxOptions
     public string Context { get; set; } = "developer-sandbox";
     public string SessionPrefix { get; set; } = "sandbox";
     public bool DisableWebhookCalls { get; set; } = true;
+    public bool VerboseConsoleOutput { get; set; } = true;
     public WindowsVoiceInputOptions WindowsVoice { get; set; } = new();
 }
 

@@ -270,6 +270,7 @@ public sealed class LlmEngine : ILlmProcessor
         var contexto = new
         {
             mensagem = texto,
+            metadata = estado.Metadata,
             dadosParciais = new
             {
                 nomeJaDetectado = estado.NomeDetectado,

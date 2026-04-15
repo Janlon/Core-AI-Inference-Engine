@@ -22,9 +22,11 @@ class DadosExtraidosModel(BaseModel):
 
 class InferenceRequest(BaseModel):
     Texto: str = Field(min_length=1, max_length=2000)
+    OriginalText: str | None = None
     TenantType: str = "residential"
     SessionId: str | None = None
     Metadata: dict[str, str] | None = None
+    CurrentState: DadosExtraidosModel | None = None
 
 
 class NlpProcessResponse(BaseModel):
