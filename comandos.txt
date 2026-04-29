@@ -1,0 +1,36 @@
+---orquestrador---
+chmod +x ./AIPort.Adapter.Orchestrator
+/AIPort.Adapter.Orchestrator
+
+#rodar como servico
+systemctl restart aiport-orchestrator.service
+systemctl stop aiport-orchestrator.service
+
+---inteligência---
+chmod +x ./AIPort.Intelligence.Service
+/AIPort.Intelligence.Service
+
+#rodar como servico
+systemctl restart aiport-intelligence.service
+systemctl stop aiport-intelligence.service
+
+---NLP---
+#instalar
+sudo apt install python3-venv
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+#rodar
+uvicorn app.main:app --host 0.0.0.0 --port 5020 --reload
+
+---asterisk---
+asterisk -rvvvvv
+sudo systemctl restart asterisk
+
+---daemon---
+sudo systemctl daemon-reload
+
+---portal---
+npm install dotenv
+npx vite --envFile .env
+npm run dev -- --host

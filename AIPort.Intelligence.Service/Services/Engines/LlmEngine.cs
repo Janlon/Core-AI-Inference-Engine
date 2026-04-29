@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using AIPort.Intelligence.Service.Domain.Enums;
 using AIPort.Intelligence.Service.Domain.Models;
 using AIPort.Intelligence.Service.Domain.Options;
@@ -79,6 +81,10 @@ public sealed class LlmEngine : ILlmProcessor
         CancellationToken ct)
     {
         var llmOptions = _options.Value.Llm;
+
+        if (string.Equals(provider.ServiceType, "GOOGLEAI", StringComparison.OrdinalIgnoreCase))
+            return await InvokeGoogleAiProviderAsync(provider, texto, estado, regras, llmOptions, ct);
+
         var kernel = BuildKernel(provider, llmOptions);
         var chat = kernel.GetRequiredService<IChatCompletionService>();
 
@@ -120,6 +126,50 @@ public sealed class LlmEngine : ILlmProcessor
         return BuildUnknownIntentResult(estado);
     }
 
+    private async Task<ProcessingLayerResult> InvokeGoogleAiProviderAsync(
+        LlmProviderConfig provider,
+        string texto,
+        ProcessingState estado,
+        TenantRule? regras,
+        LlmConfig llmOptions,
+        CancellationToken ct)
+    {
+        var raw = await SendGoogleAiChatCompletionAsync(
+            provider,
+            [
+                new { role = "system", content = BuildSystemPrompt(regras) },
+                new { role = "user", content = BuildUserMessage(texto, estado) }
+            ],
+            temperature: llmOptions.Temperature,
+            maxTokens: Math.Max(1024, llmOptions.MaxTokens),
+            ct);
+
+        var parsed = ParseLlmResponse(raw, estado);
+        if (parsed is not null)
+            return parsed;
+
+        _logger.LogWarning("Resposta inicial do Gemini foi inválida. Tentando uma segunda chamada de reparo com temperatura baixa.");
+
+        var retryRaw = await SendGoogleAiChatCompletionAsync(
+            provider,
+            [
+                new { role = "system", content = BuildSystemPrompt(regras) },
+                new { role = "user", content = BuildUserMessage(texto, estado) },
+                new { role = "assistant", content = raw.Length > 3500 ? raw[..3500] : raw },
+                new { role = "user", content = "Reenvie APENAS JSON válido no formato solicitado. Não inclua markdown, explicações ou texto adicional." }
+            ],
+            temperature: 0.0,
+            maxTokens: Math.Max(768, llmOptions.MaxTokens),
+            ct);
+
+        var retryParsed = ParseLlmResponse(retryRaw, estado);
+        if (retryParsed is not null)
+            return retryParsed with { Camada = "LLM-Retry" };
+
+        _logger.LogWarning("Resposta do Gemini não pôde ser desserializada após tentativas de reparo. Acionando fallback humano.");
+        return BuildUnknownIntentResult(estado);
+    }
+
     private static async Task<string> GetRawResponseAsync(
         IChatCompletionService chat,
         ChatHistory history,
@@ -139,6 +189,83 @@ public sealed class LlmEngine : ILlmProcessor
 
         var response = await chat.GetChatMessageContentAsync(history, settings, kernel, ct);
         return response.Content ?? string.Empty;
+    }
+
+    private async Task<string> SendGoogleAiChatCompletionAsync(
+        LlmProviderConfig provider,
+        IReadOnlyList<object> messages,
+        double temperature,
+        int maxTokens,
+        CancellationToken ct)
+    {
+        using var client = new HttpClient
+        {
+            BaseAddress = new Uri(provider.Endpoint.TrimEnd('/') + "/"),
+            Timeout = TimeSpan.FromSeconds(Math.Max(1, _options.Value.Llm.ProviderTimeoutSeconds))
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", provider.ApiKey);
+        request.Content = JsonContent.Create(new
+        {
+            model = provider.Model,
+            messages,
+            temperature,
+            max_tokens = maxTokens
+        }, options: JsonOptions);
+
+        using var response = await client.SendAsync(request, ct);
+        var payload = await response.Content.ReadAsStringAsync(ct);
+
+        if (!response.IsSuccessStatusCode)
+            throw new HttpRequestException($"Gemini respondeu HTTP {(int)response.StatusCode}: {payload}");
+
+        return ExtractOpenAiCompatibleContent(payload);
+    }
+
+    private static string ExtractOpenAiCompatibleContent(string payload)
+    {
+        using var document = JsonDocument.Parse(payload);
+
+        if (!document.RootElement.TryGetProperty("choices", out var choices)
+            || choices.ValueKind != JsonValueKind.Array
+            || choices.GetArrayLength() == 0)
+        {
+            return string.Empty;
+        }
+
+        var message = choices[0].GetProperty("message");
+        if (!message.TryGetProperty("content", out var content))
+            return string.Empty;
+
+        if (content.ValueKind == JsonValueKind.String)
+            return content.GetString() ?? string.Empty;
+
+        if (content.ValueKind != JsonValueKind.Array)
+            return content.ToString();
+
+        var parts = new List<string>();
+        foreach (var item in content.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String)
+            {
+                var value = item.GetString();
+                if (!string.IsNullOrWhiteSpace(value))
+                    parts.Add(value);
+                continue;
+            }
+
+            if (item.ValueKind == JsonValueKind.Object
+                && item.TryGetProperty("text", out var text)
+                && text.ValueKind == JsonValueKind.String)
+            {
+                var value = text.GetString();
+                if (!string.IsNullOrWhiteSpace(value))
+                    parts.Add(value);
+            }
+        }
+
+        return string.Join("\n", parts);
     }
 
     private Kernel BuildKernel(LlmProviderConfig provider, LlmConfig llmOptions)

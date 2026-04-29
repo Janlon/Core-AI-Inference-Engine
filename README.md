@@ -109,6 +109,17 @@ Variaveis de ambiente equivalentes:
 - `AIPORT_AI_NLP_EXTERNAL_API_TIMEOUT_MS`
 - `AIPORT_AI_NLP_EXTERNAL_API_KEY`
 
+Para o provider LLM principal em producao, o `AIPort.Intelligence.Service` tambem aceita:
+
+- `AIPORT_AI_LLM_PRIMARY_NAME`
+- `AIPORT_AI_LLM_PRIMARY_SERVICE_TYPE`
+- `AIPORT_AI_LLM_PRIMARY_API_KEY`
+- `AIPORT_AI_LLM_PRIMARY_MODEL`
+- `AIPORT_AI_LLM_PRIMARY_DEPLOYMENT_NAME`
+- `AIPORT_AI_LLM_PRIMARY_ENDPOINT`
+- `AIPORT_AI_LLM_PRIMARY_ENABLED`
+- `AIPORT_AI_LLM_PRIMARY_PRIORITY`
+
 No `AIPort.Adapter.Orchestrator`, o sandbox de desenvolvimento aceita configuracoes relevantes em `DeveloperSandbox`, incluindo:
 
 - `DisableWebhookCalls`
@@ -148,6 +159,76 @@ chcp 65001
 ## Execucao local
 
 Suba primeiro o servico Python em `http://localhost:8010`, depois o `AIPort.Intelligence.Service` e por fim o `AIPort.Adapter.Orchestrator`.
+
+## Producao Debian
+
+No Debian, o deploy continua usando o `appsettings.json` padrao de cada servico. Quando necessario, os ajustes de host, credenciais e endpoints podem ser feitos por variaveis de ambiente, sem depender de um `appsettings.Production.json` separado.
+
+O arquivo central recomendado para isso e [aiport.env](c:/repositorio/Core-AI-Inference-Engine-github/Core-AI-Inference-Engine/aiport.env), que agrupa as variaveis dos dois servicos em um unico lugar.
+
+Variaveis minimas recomendadas no Debian:
+
+- `ASPNETCORE_ENVIRONMENT=Production`
+- `AIPORT_AI_NLP_EXTERNAL_API_BASE_URL=http://127.0.0.1:8010`
+- `AIPORT_AI_LLM_PRIMARY_API_KEY=<sua_chave_gemini>`
+- `AIPORT_AI_LLM_PRIMARY_MODEL=gemini-2.5-flash`
+- `AIPORT_AI_LLM_PRIMARY_ENDPOINT=https://generativelanguage.googleapis.com/v1beta/openai/`
+- `AIPORT_AI_LLM_PRIMARY_SERVICE_TYPE=GoogleAI`
+- `AIPORT_AI_LLM_PRIMARY_ENABLED=true`
+- `AIPORT_AI_LLM_PRIMARY_PRIORITY=1`
+
+Exemplo de export antes de iniciar o servico:
+
+```bash
+export ASPNETCORE_ENVIRONMENT=Production
+export AIPORT_AI_NLP_EXTERNAL_API_BASE_URL=http://127.0.0.1:8010
+export AIPORT_AI_LLM_PRIMARY_API_KEY="sua-chave-gemini"
+export AIPORT_AI_LLM_PRIMARY_MODEL=gemini-2.5-flash
+export AIPORT_AI_LLM_PRIMARY_ENDPOINT=https://generativelanguage.googleapis.com/v1beta/openai/
+export AIPORT_AI_LLM_PRIMARY_SERVICE_TYPE=GoogleAI
+export AIPORT_AI_LLM_PRIMARY_ENABLED=true
+export AIPORT_AI_LLM_PRIMARY_PRIORITY=1
+./AIPort.Intelligence.Service
+```
+
+Para o Orchestrator, o mesmo principio vale: o servico sobe com o `appsettings.json` padrao e os pontos sensiveis de producao ficam em variaveis de ambiente, como `InputSourceMode=Asterisk`, URL do Intelligence Service e credenciais externas.
+
+Variaveis minimas recomendadas no Debian para o Orchestrator:
+
+- `ASPNETCORE_ENVIRONMENT=Production`
+- `AIPORT_INPUT_SOURCE_MODE=Asterisk`
+- `AIPORT_INTELLIGENCE_BASE_URL=http://127.0.0.1:5005`
+- `AIPORT_MARIADB_CONNECTION_STRING=<connection_string_do_mariadb>`
+- `AIPORT_ORCHESTRATOR_SERVER_URLS=http://0.0.0.0:5000`
+- `AIPORT_GOOGLE_CREDENTIALS_PATH=/opt/aiport/credentials/google_cloud_auth.json`
+
+Exemplo de export antes de iniciar o Orchestrator:
+
+```bash
+export ASPNETCORE_ENVIRONMENT=Production
+export AIPORT_INPUT_SOURCE_MODE=Asterisk
+export AIPORT_INTELLIGENCE_BASE_URL=http://127.0.0.1:5005
+export AIPORT_MARIADB_CONNECTION_STRING="Server=127.0.0.1;Port=3306;Database=aiport;User ID=aiport;Password=senha-segura;"
+export AIPORT_ORCHESTRATOR_SERVER_URLS=http://0.0.0.0:5000
+export AIPORT_GOOGLE_CREDENTIALS_PATH=/opt/aiport/credentials/google_cloud_auth.json
+./AIPort.Adapter.Orchestrator
+```
+
+Arquivos `systemd` de exemplo foram adicionados em [deploy/systemd/aiport-intelligence.service](c:/repositorio/Core-AI-Inference-Engine-github/Core-AI-Inference-Engine/deploy/systemd/aiport-intelligence.service) e [deploy/systemd/aiport-orchestrator.service](c:/repositorio/Core-AI-Inference-Engine-github/Core-AI-Inference-Engine/deploy/systemd/aiport-orchestrator.service). Ambos leem o mesmo arquivo `/etc/aiport/aiport.env`.
+
+Passos sugeridos no Debian:
+
+```bash
+sudo mkdir -p /etc/aiport
+sudo cp aiport.env /etc/aiport/aiport.env
+sudo cp deploy/systemd/aiport-intelligence.service /etc/systemd/system/
+sudo cp deploy/systemd/aiport-orchestrator.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable aiport-intelligence aiport-orchestrator
+sudo systemctl start aiport-intelligence
+sudo systemctl start aiport-orchestrator
+sudo systemctl status aiport-intelligence aiport-orchestrator
+```
 
 ## Testes
 

@@ -1,0 +1,19 @@
+[Unit]
+Description=AIPort Intelligence Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aiport
+Group=aiport
+WorkingDirectory=/opt/aiport/intelligence
+EnvironmentFile=/etc/aiport/aiport.env
+ExecStart=/opt/aiport/intelligence/AIPort.Intelligence.Service
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+SyslogIdentifier=aiport-intelligence
+
+[Install]
+WantedBy=multi-user.target

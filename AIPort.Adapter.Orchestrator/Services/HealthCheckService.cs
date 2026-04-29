@@ -5,6 +5,7 @@ using AIPort.Adapter.Orchestrator.Config;
 using AIPort.Adapter.Orchestrator.Services.Interfaces;
 using MySqlConnector;
 using Microsoft.Extensions.Options;
+using System.Text.Json;
 
 namespace AIPort.Adapter.Orchestrator.Services;
 
@@ -159,7 +160,8 @@ public sealed class HealthCheckService : IHealthCheckService
                 status = aiHealth.Status,
                 baseUrl = _intelligenceOptions.BaseUrl,
                 latencyMs = aiHealth.LatencyMs,
-                message = aiHealth.Message
+                message = aiHealth.Message,
+                llm = aiHealth.Llm
             },
             ["speech"] = new
             {
@@ -195,11 +197,11 @@ public sealed class HealthCheckService : IHealthCheckService
         return status;
     }
 
-    private async Task<(string Status, long? LatencyMs, string? Message)> ProbeIntelligenceServiceAsync(CancellationToken cancellationToken)
+    private async Task<(string Status, long? LatencyMs, string? Message, object? Llm)> ProbeIntelligenceServiceAsync(CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(_intelligenceOptions.BaseUrl))
         {
-            return ("unconfigured", null, "BaseUrl do Intelligence Service não configurada.");
+            return ("unconfigured", null, "BaseUrl do Intelligence Service não configurada.", null);
         }
 
         try
@@ -210,15 +212,63 @@ public sealed class HealthCheckService : IHealthCheckService
             var started = Environment.TickCount64;
             using var response = await http.GetAsync(uri, cancellationToken);
             var elapsed = Environment.TickCount64 - started;
+            var responseBody = await SafeReadBodyAsync(response, cancellationToken);
+            var parsed = ParseIntelligenceHealthPayload(responseBody);
 
-            return response.IsSuccessStatusCode
-                ? ("healthy", elapsed, null)
-                : ("unhealthy", elapsed, $"HTTP {(int)response.StatusCode}");
+            var status = parsed.Status
+                ?? (response.IsSuccessStatusCode ? "healthy" : "unhealthy");
+
+            var message = parsed.Message
+                ?? (response.IsSuccessStatusCode ? null : $"HTTP {(int)response.StatusCode}");
+
+            return (status, elapsed, message, parsed.Llm);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Falha ao verificar Intelligence Service.");
-            return ("unhealthy", null, ex.Message);
+            return ("unhealthy", null, ex.Message, null);
+        }
+    }
+
+    private static async Task<string?> SafeReadBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        if (response.Content is null)
+            return null;
+
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        return string.IsNullOrWhiteSpace(body) ? null : body;
+    }
+
+    private static (string? Status, string? Message, object? Llm) ParseIntelligenceHealthPayload(string? responseBody)
+    {
+        if (string.IsNullOrWhiteSpace(responseBody))
+            return (null, null, null);
+
+        try
+        {
+            using var doc = JsonDocument.Parse(responseBody);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return (null, null, null);
+
+            var root = doc.RootElement;
+            string? status = null;
+            string? message = null;
+            object? llm = null;
+
+            if (root.TryGetProperty("status", out var statusNode) && statusNode.ValueKind == JsonValueKind.String)
+                status = statusNode.GetString();
+
+            if (root.TryGetProperty("message", out var messageNode) && messageNode.ValueKind == JsonValueKind.String)
+                message = messageNode.GetString();
+
+            if (root.TryGetProperty("llm", out var llmNode))
+                llm = JsonSerializer.Deserialize<object>(llmNode.GetRawText());
+
+            return (status, message, llm);
+        }
+        catch
+        {
+            return (null, null, null);
         }
     }
 

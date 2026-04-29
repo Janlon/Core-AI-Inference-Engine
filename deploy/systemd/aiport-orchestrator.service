@@ -1,0 +1,20 @@
+[Unit]
+Description=AIPort Adapter Orchestrator
+After=network-online.target mariadb.service aiport-intelligence.service
+Wants=network-online.target
+Requires=aiport-intelligence.service
+
+[Service]
+Type=simple
+User=aiport
+Group=aiport
+WorkingDirectory=/opt/aiport/orchestrator
+EnvironmentFile=/etc/aiport/aiport.env
+ExecStart=/opt/aiport/orchestrator/AIPort.Adapter.Orchestrator
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+SyslogIdentifier=aiport-orchestrator
+
+[Install]
+WantedBy=multi-user.target

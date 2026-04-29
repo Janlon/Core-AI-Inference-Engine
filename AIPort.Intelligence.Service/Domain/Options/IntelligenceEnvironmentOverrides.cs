@@ -47,7 +47,16 @@ public static class IntelligenceEnvironmentOverrides
 
             ["AIService:Llm:ProviderTimeoutSeconds"] = Environment.GetEnvironmentVariable("AIPORT_AI_LLM_PROVIDER_TIMEOUT_SECONDS"),
             ["AIService:Llm:Temperature"] = Environment.GetEnvironmentVariable("AIPORT_AI_LLM_TEMPERATURE"),
-            ["AIService:Llm:MaxTokens"] = Environment.GetEnvironmentVariable("AIPORT_AI_LLM_MAX_TOKENS")
+            ["AIService:Llm:MaxTokens"] = Environment.GetEnvironmentVariable("AIPORT_AI_LLM_MAX_TOKENS"),
+
+            ["AIService:LlmProviders:0:Name"] = Environment.GetEnvironmentVariable("AIPORT_AI_LLM_PRIMARY_NAME"),
+            ["AIService:LlmProviders:0:ServiceType"] = Environment.GetEnvironmentVariable("AIPORT_AI_LLM_PRIMARY_SERVICE_TYPE"),
+            ["AIService:LlmProviders:0:ApiKey"] = Environment.GetEnvironmentVariable("AIPORT_AI_LLM_PRIMARY_API_KEY"),
+            ["AIService:LlmProviders:0:Model"] = Environment.GetEnvironmentVariable("AIPORT_AI_LLM_PRIMARY_MODEL"),
+            ["AIService:LlmProviders:0:DeploymentName"] = Environment.GetEnvironmentVariable("AIPORT_AI_LLM_PRIMARY_DEPLOYMENT_NAME"),
+            ["AIService:LlmProviders:0:Endpoint"] = Environment.GetEnvironmentVariable("AIPORT_AI_LLM_PRIMARY_ENDPOINT"),
+            ["AIService:LlmProviders:0:IsEnabled"] = Environment.GetEnvironmentVariable("AIPORT_AI_LLM_PRIMARY_ENABLED"),
+            ["AIService:LlmProviders:0:Priority"] = Environment.GetEnvironmentVariable("AIPORT_AI_LLM_PRIMARY_PRIORITY")
         };
 
         configuration.AddInMemoryCollection(overrides.Where(x => !string.IsNullOrWhiteSpace(x.Value))!);

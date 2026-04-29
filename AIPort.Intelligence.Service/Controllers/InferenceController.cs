@@ -85,10 +85,24 @@ public sealed class InferenceController : ControllerBase
     }
 
     /// <summary>
-    /// Health-check simples para sondagem de disponibilidade do serviço.
+    /// Health-check do serviço incluindo o status dos provedores LLM habilitados.
     /// </summary>
     [HttpGet("health")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public IActionResult Health() =>
-        Ok(new { status = "healthy", service = "AIPort.Intelligence.Service", utc = DateTime.UtcNow });
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> Health([FromServices] ILlmHealthService llmHealthService, CancellationToken ct)
+    {
+        var llm = await llmHealthService.GetHealthAsync(ct);
+        var body = new
+        {
+            status = llm.Status,
+            service = "AIPort.Intelligence.Service",
+            utc = DateTime.UtcNow,
+            llm
+        };
+
+        return llm.Status == "healthy"
+            ? Ok(body)
+            : StatusCode(StatusCodes.Status503ServiceUnavailable, body);
+    }
 }

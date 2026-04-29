@@ -67,6 +67,7 @@ builder.Services.AddHttpClient<INlpProcessor, HttpNlpProcessor>((serviceProvider
     client.Timeout = TimeSpan.FromMilliseconds(Math.Max(1000, nlpOptions.ExternalApiTimeoutMs));
 });
 builder.Services.AddScoped<ILlmProcessor, LlmEngine>();
+builder.Services.AddScoped<ILlmHealthService, LlmHealthService>();
 builder.Services.AddScoped<IDecisionEngine, DecisionEngine>();
 
 // ── HttpClient factory (necessário para Ollama e extensões futuras) ───────────
@@ -93,5 +94,19 @@ app.MapGet("/docs", () => Results.Redirect("/scalar/v1", permanent: false));
 app.UseAuthorization();
 app.MapControllers();
 
-app.MapGet("/health", () => Results.Ok(new { status = "UP", service = "AIPort Intelligence" }));
+app.MapGet("/health", async (ILlmHealthService llmHealthService, CancellationToken ct) =>
+{
+    var llm = await llmHealthService.GetHealthAsync(ct);
+    var body = new
+    {
+        status = llm.Status,
+        service = "AIPort Intelligence",
+        utc = DateTime.UtcNow,
+        llm
+    };
+
+    return llm.Status == "healthy"
+        ? Results.Ok(body)
+        : Results.Json(body, statusCode: StatusCodes.Status503ServiceUnavailable);
+});
 app.Run();
