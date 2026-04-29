@@ -17,7 +17,7 @@ async def diagnose_llm_connection():
     # 1. Verificação de variáveis de ambiente
     print("📋 VERIFICAÇÃO DE CHAVES API:")
     
-    gemini_key = os.getenv("GEMINI_API_KEY")
+    gemini_key = os.getenv("AIPORT_AI_LLM_PRIMARY_API_KEY") or os.getenv("GEMINI_API_KEY")
     openai_key = os.getenv("OPENAI_API_KEY") 
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
     

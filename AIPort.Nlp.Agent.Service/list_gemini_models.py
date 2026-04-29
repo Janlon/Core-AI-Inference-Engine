@@ -2,6 +2,7 @@
 """Lista modelos Gemini disponíveis para a GEMINI_API_KEY configurada."""
 
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -9,13 +10,12 @@ from typing import Any, cast
 
 
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models"
-INLINE_GEMINI_API_KEY = "AIzaSyBWNXhL-tZtAhO7-fJNPamAeFSRGX1MobA"
 PLACEHOLDER_KEYS = {"your_gemini_api_key_here", "placeholder", "", "COLE_SUA_CHAVE_AQUI"}
 
 
 def get_api_key() -> str | None:
-    """Retorna a chave Gemini válida definida diretamente neste arquivo."""
-    api_key = INLINE_GEMINI_API_KEY.strip()
+    """Retorna a chave Gemini válida definida no ambiente."""
+    api_key = (os.getenv("AIPORT_AI_LLM_PRIMARY_API_KEY") or os.getenv("GEMINI_API_KEY") or "").strip()
     if api_key in PLACEHOLDER_KEYS:
         return None
     return api_key or None
@@ -79,8 +79,7 @@ def print_models(models: list[dict[str, Any]]) -> None:
 def main() -> int:
     api_key = get_api_key()
     if not api_key:
-        print("A chave Gemini não foi definida em INLINE_GEMINI_API_KEY.")
-        print("Edite este arquivo e cole a chave diretamente na constante no topo.")
+        print("A chave Gemini não foi definida nas variáveis de ambiente AIPORT_AI_LLM_PRIMARY_API_KEY ou GEMINI_API_KEY.")
         return 1
 
     try:
