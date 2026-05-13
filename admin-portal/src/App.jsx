@@ -43,6 +43,7 @@ const tabs = [
 function App() {
   const [activeTab, setActiveTab] = useState('health')
   const [telemetryHistory, setTelemetryHistory] = useState([])
+  const [monitorActionState, setMonitorActionState] = useState({ loading: false, tone: 'idle', message: '' })
 
   const healthQuery = useHealthSnapshot()
   const recentEventsQuery = useRecentEvents()
@@ -155,15 +156,40 @@ function App() {
 
   const topSummary = useMemo(
     () => [
-      { label: 'Overall', value: formatStatus(health.overall), icon: ShieldCheck },
+      { label: 'Visao geral', value: formatStatus(health.overall), icon: ShieldCheck },
       { label: 'Chamadas Ativas', value: String(activeCalls), icon: PhoneCall },
-      { label: 'Latencia IA', value: prettyMs(latencyMs), icon: Activity },
+      { label: 'Latencia da IA', value: prettyMs(latencyMs), icon: Activity },
       { label: 'Voz/TTS', value: formatStatus(speechHealth.status), icon: HeartPulse },
-      { label: 'CPU Host', value: prettyPercent(cpuUsagePercent), icon: Server },
-      { label: 'Memoria Host', value: prettyPercent(memoryUsagePercent), icon: Database },
+      { label: 'CPU do host', value: prettyPercent(cpuUsagePercent), icon: Server },
+      { label: 'Memoria do host', value: prettyPercent(memoryUsagePercent), icon: Database },
     ],
     [activeCalls, cpuUsagePercent, health.overall, latencyMs, memoryUsagePercent, speechHealth.status],
   )
+
+  const handleStartOrchestratorMonitor = async () => {
+    setMonitorActionState({ loading: true, tone: 'idle', message: '' })
+
+    try {
+      const response = await fetch(`${API_BASE}/api/health/monitor/start`, { method: 'POST' })
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(payload.message ?? payload.detail ?? `Erro ${response.status}`)
+      }
+
+      setMonitorActionState({
+        loading: false,
+        tone: 'success',
+        message: payload.message ?? 'Monitor do orquestrador iniciado com sucesso.',
+      })
+    } catch (error) {
+      setMonitorActionState({
+        loading: false,
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Falha ao iniciar o monitor do orquestrador.',
+      })
+    }
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -190,6 +216,8 @@ function App() {
             healthQuery={healthQuery}
             llmHealth={llmHealth}
             telemetryHistory={telemetryHistory}
+            monitorActionState={monitorActionState}
+            onStartOrchestratorMonitor={handleStartOrchestratorMonitor}
           />
         )}
 

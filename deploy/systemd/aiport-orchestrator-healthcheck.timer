@@ -1,0 +1,12 @@
+[Unit]
+Description=Run AIPort Orchestrator health check periodically
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=30s
+AccuracySec=5s
+Persistent=true
+Unit=aiport-orchestrator-healthcheck.service
+
+[Install]
+WantedBy=timers.target

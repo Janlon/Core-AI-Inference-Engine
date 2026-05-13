@@ -24,6 +24,8 @@ var useDeveloperSandbox = runtimeInputOptions.InputSourceMode is InputSourceMode
 
 var serverConfig = new ServerOptions();
 builder.Configuration.GetSection(ServerOptions.SectionName).Bind(serverConfig);
+var corsConfig = new CorsOptions();
+builder.Configuration.GetSection(CorsOptions.SectionName).Bind(corsConfig);
 
 builder.WebHost.UseUrls(serverConfig.Urls)
     .ConfigureKestrel(kestrelOptions =>
@@ -38,8 +40,23 @@ builder.Services.Configure<MariaDbOptions>(builder.Configuration.GetSection(Mari
 builder.Services.Configure<WebhookOptions>(builder.Configuration.GetSection(WebhookOptions.SectionName));
 builder.Services.Configure<SpeechOptions>(builder.Configuration.GetSection(SpeechOptions.SectionName));
 builder.Services.Configure<ServerOptions>(builder.Configuration.GetSection(ServerOptions.SectionName));
+builder.Services.Configure<CorsOptions>(builder.Configuration.GetSection(CorsOptions.SectionName));
+builder.Services.Configure<MaintenanceOptions>(builder.Configuration.GetSection(MaintenanceOptions.SectionName));
 builder.Services.Configure<FallbackRoutingOptions>(builder.Configuration.GetSection(FallbackRoutingOptions.SectionName));
 builder.Services.Configure<RuntimeInputOptions>(builder.Configuration);
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AdminPortal", policy =>
+    {
+        if (corsConfig.AllowedOrigins.Length == 0)
+            return;
+
+        policy.WithOrigins(corsConfig.AllowedOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
 
 builder.Services.AddSingleton<IDbConnectionFactory, MariaDbConnectionFactory>();
 builder.Services.AddSingleton<IAgiRuntimeState, AgiRuntimeState>();
@@ -125,6 +142,17 @@ builder.Services.AddOpenApi(options =>
 
 var app = builder.Build();
 
+if (corsConfig.AllowedOrigins.Length > 0)
+{
+    app.Logger.LogInformation(
+        "CORS policy AdminPortal enabled for origins: {Origins}",
+        string.Join(", ", corsConfig.AllowedOrigins));
+}
+else
+{
+    app.Logger.LogWarning("CORS policy AdminPortal is disabled because no allowed origins were configured.");
+}
+
 app.MapOpenApi();
 app.MapScalarApiReference(opts =>
 {
@@ -140,6 +168,11 @@ app.MapGet("/health", async (IHealthCheckService healthCheck) =>
     var status = await healthCheck.GetHealthStatusAsync();
     return Results.Ok(status);
 });
+
+if (corsConfig.AllowedOrigins.Length > 0)
+{
+    app.UseCors("AdminPortal");
+}
 
 app.UseAuthorization();
 app.MapControllers();

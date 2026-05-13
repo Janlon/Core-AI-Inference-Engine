@@ -1,5 +1,8 @@
 using AIPort.Adapter.Orchestrator.Services.Interfaces;
+using AIPort.Adapter.Orchestrator.Config;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using System.Diagnostics;
 
 namespace AIPort.Adapter.Orchestrator.Controllers;
 
@@ -11,11 +14,16 @@ namespace AIPort.Adapter.Orchestrator.Controllers;
 public class HealthController : ControllerBase
 {
     private readonly IHealthCheckService _healthCheckService;
+    private readonly MaintenanceOptions _maintenanceOptions;
     private readonly ILogger<HealthController> _logger;
 
-    public HealthController(IHealthCheckService healthCheckService, ILogger<HealthController> logger)
+    public HealthController(
+        IHealthCheckService healthCheckService,
+        IOptions<MaintenanceOptions> maintenanceOptions,
+        ILogger<HealthController> logger)
     {
         _healthCheckService = healthCheckService ?? throw new ArgumentNullException(nameof(healthCheckService));
+        _maintenanceOptions = maintenanceOptions?.Value ?? throw new ArgumentNullException(nameof(maintenanceOptions));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -111,5 +119,83 @@ public class HealthController : ControllerBase
             service = "AIPort.Adapter.Orchestrator",
             timestamp = DateTime.UtcNow
         });
+    }
+
+    [HttpPost("monitor/start")]
+    public async Task<IActionResult> StartOrchestratorMonitor(CancellationToken cancellationToken = default)
+    {
+        if (!_maintenanceOptions.EnableServiceControl)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new
+            {
+                message = "Controle administrativo de serviços está desabilitado neste ambiente.",
+                commandConfigured = !string.IsNullOrWhiteSpace(_maintenanceOptions.StartOrchestratorMonitorCommand)
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(_maintenanceOptions.StartOrchestratorMonitorCommand))
+        {
+            return StatusCode(StatusCodes.Status501NotImplemented, new
+            {
+                message = "Comando para iniciar o monitor do orquestrador não foi configurado."
+            });
+        }
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "/bin/bash",
+            ArgumentList = { "-lc", _maintenanceOptions.StartOrchestratorMonitorCommand },
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        try
+        {
+            using var process = new Process { StartInfo = startInfo };
+            process.Start();
+
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+            var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+
+            await process.WaitForExitAsync(cancellationToken);
+
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
+            var output = string.Join("\n", new[] { stdout, stderr }.Where(x => !string.IsNullOrWhiteSpace(x))).Trim();
+
+            if (process.ExitCode != 0)
+            {
+                _logger.LogWarning(
+                    "Falha ao iniciar monitor do orquestrador. ExitCode={ExitCode} Output={Output}",
+                    process.ExitCode,
+                    output);
+
+                return StatusCode(StatusCodes.Status500InternalServerError, new
+                {
+                    message = "Falha ao iniciar o monitor do orquestrador.",
+                    exitCode = process.ExitCode,
+                    output
+                });
+            }
+
+            _logger.LogInformation("Monitor do orquestrador iniciado manualmente via API administrativa.");
+            return Ok(new
+            {
+                message = "Monitor do orquestrador iniciado com sucesso.",
+                exitCode = process.ExitCode,
+                output
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erro inesperado ao iniciar monitor do orquestrador via API administrativa.");
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                message = "Erro inesperado ao iniciar o monitor do orquestrador.",
+                detail = ex.Message
+            });
+        }
     }
 }

@@ -19,6 +19,8 @@ public static class OrchestratorEnvironmentOverrides
             Environment.GetEnvironmentVariable("AIPORT_ORCHESTRATOR_SERVER_KEEP_ALIVE_TIMEOUT_SECONDS"),
             Environment.GetEnvironmentVariable("AIPORT_SERVER_KEEP_ALIVE_TIMEOUT_SECONDS"));
 
+        var corsAllowedOrigins = Environment.GetEnvironmentVariable("AIPORT_CORS_ALLOWED_ORIGINS");
+
         var overrides = new Dictionary<string, string?>
         {
             ["InputSourceMode"] = Environment.GetEnvironmentVariable("AIPORT_INPUT_SOURCE_MODE"),
@@ -46,6 +48,9 @@ public static class OrchestratorEnvironmentOverrides
 
             ["FallbackRouting:DatabaseOfflineExtension"] = Environment.GetEnvironmentVariable("AIPORT_FALLBACK_DATABASE_OFFLINE_EXTENSION"),
 
+            ["Maintenance:EnableServiceControl"] = Environment.GetEnvironmentVariable("AIPORT_MAINTENANCE_ENABLE_SERVICE_CONTROL"),
+            ["Maintenance:StartOrchestratorMonitorCommand"] = Environment.GetEnvironmentVariable("AIPORT_MAINTENANCE_START_ORCHESTRATOR_MONITOR_COMMAND"),
+
             ["Speech:TtsProvider"] = Environment.GetEnvironmentVariable("AIPORT_TTS_PROVIDER"),
             ["Speech:Asterisk:TtsApplication"] = Environment.GetEnvironmentVariable("AIPORT_ASTERISK_TTS_APP"),
             ["Speech:Google:CredentialsPath"] = Environment.GetEnvironmentVariable("AIPORT_GOOGLE_CREDENTIALS_PATH"),
@@ -70,6 +75,15 @@ public static class OrchestratorEnvironmentOverrides
             ["DeveloperSandbox:WindowsVoice:Region"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_WINDOWS_VOICE_REGION"),
             ["DeveloperSandbox:WindowsVoice:Language"] = Environment.GetEnvironmentVariable("AIPORT_SANDBOX_WINDOWS_VOICE_LANGUAGE")
         };
+
+        if (!string.IsNullOrWhiteSpace(corsAllowedOrigins))
+        {
+            var origins = corsAllowedOrigins
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            for (var index = 0; index < origins.Length; index++)
+                overrides[$"Cors:AllowedOrigins:{index}"] = origins[index];
+        }
 
         configuration.AddInMemoryCollection(overrides.Where(x => !string.IsNullOrWhiteSpace(x.Value))!);
     }

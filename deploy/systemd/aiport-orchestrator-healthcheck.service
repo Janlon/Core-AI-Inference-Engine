@@ -1,0 +1,16 @@
+[Unit]
+Description=AIPort Orchestrator Health Check
+After=network-online.target aiport-orchestrator.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+Environment=AIPORT_ORCHESTRATOR_HEALTH_URL=http://127.0.0.1:5000/health
+Environment=AIPORT_ORCHESTRATOR_SERVICE_NAME=aiport-orchestrator.service
+Environment=AIPORT_ORCHESTRATOR_HEALTH_FAILURE_THRESHOLD=3
+Environment=AIPORT_ORCHESTRATOR_HEALTH_TIMEOUT_SECONDS=5
+Environment=AIPORT_ORCHESTRATOR_RESTART_ON_DEGRADED=false
+ExecStart=/usr/bin/python3 /opt/aiport/orchestrator/aiport-orchestrator-healthcheck.py
+SyslogIdentifier=aiport-orchestrator-healthcheck

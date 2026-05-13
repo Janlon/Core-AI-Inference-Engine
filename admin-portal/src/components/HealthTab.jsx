@@ -22,6 +22,8 @@ export function HealthTab({
   healthQuery,
   llmHealth,
   telemetryHistory,
+  monitorActionState,
+  onStartOrchestratorMonitor,
 }) {
   return (
     <main className="space-y-5">
@@ -53,7 +55,7 @@ export function HealthTab({
         <HealthCard
           title="Servico de IA"
           status={aiHealth.status}
-          detail={`Base URL: ${aiHealth.baseUrl ?? '--'}`}
+          detail={`URL base: ${aiHealth.baseUrl ?? '--'}`}
           icon={Server}
         />
         <HealthCard
@@ -69,13 +71,13 @@ export function HealthTab({
           icon={HeartPulse}
         />
         <HealthCard
-          title="CPU Host"
+          title="CPU do host"
           status={resourceStatus(cpuUsagePercent, systemHealth.status)}
           detail={`${prettyPercent(cpuUsagePercent)} de uso • ${systemHealth.logicalCores ?? '--'} cores`}
           icon={Activity}
         />
         <HealthCard
-          title="Memoria Host"
+          title="Memoria do host"
           status={resourceStatus(memoryUsagePercent, systemHealth.status)}
           detail={`${prettyBytes(memoryHealth.usedBytes)} / ${prettyBytes(memoryHealth.totalBytes)}`}
           icon={Database}
@@ -83,14 +85,31 @@ export function HealthTab({
       </section>
 
       <section className="glass-card">
-        <p className="text-sm text-slate-400">Atualizacao automatica</p>
-        <p className="mt-1 text-sm text-slate-200">O health check e consultado a cada 30 segundos em <span className="font-mono text-cyan-300">/api/health</span>.</p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-sm text-slate-400">Atualizacao automatica</p>
+            <p className="mt-1 text-sm text-slate-200">O health check e consultado a cada 30 segundos em <span className="font-mono text-cyan-300">/api/health</span>.</p>
+          </div>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={onStartOrchestratorMonitor}
+            disabled={monitorActionState.loading}
+          >
+            {monitorActionState.loading ? 'Iniciando monitor...' : 'Iniciar monitor do orquestrador'}
+          </button>
+        </div>
         <p className="mt-2 text-xs text-slate-400">Em Linux, incluindo Debian 13, CPU e memoria sao lidos do host via /proc/stat e /proc/meminfo.</p>
         <p className="mt-1 text-xs text-slate-500">Ultima amostra: {systemHealth.sampledAtUtc ? new Date(systemHealth.sampledAtUtc).toLocaleString() : '--'}.</p>
         <p className="mt-1 text-xs text-slate-500">Voz: {speechHealth.ready ? 'pronta para atender' : 'ainda aquecendo'} desde {prettyDateTime(speechHealth.lastWarmupAtUtc)}.</p>
-        {speechHealth.lastWarmupElapsedMs != null && <p className="mt-1 text-xs text-slate-500">Warmup TTS: {prettyMs(speechHealth.lastWarmupElapsedMs)}.</p>}
+        {speechHealth.lastWarmupElapsedMs != null && <p className="mt-1 text-xs text-slate-500">Aquecimento do TTS: {prettyMs(speechHealth.lastWarmupElapsedMs)}.</p>}
         {speechHealth.message && <p className="mt-1 text-xs text-slate-500">{speechHealth.message}</p>}
         {systemHealth.message && <p className="mt-1 text-xs text-slate-500">{systemHealth.message}</p>}
+        {monitorActionState.message && (
+          <p className={`mt-2 text-xs ${monitorActionState.tone === 'success' ? 'text-emerald-300' : 'text-rose-300'}`}>
+            {monitorActionState.message}
+          </p>
+        )}
         {healthQuery.isFetching && <p className="mt-2 text-xs text-cyan-300">Atualizando status...</p>}
         {healthQuery.isError && <p className="mt-2 text-xs text-rose-300">Nao foi possivel consultar o backend agora.</p>}
       </section>
@@ -101,7 +120,7 @@ export function HealthTab({
         <TelemetryChart
           title="CPU em tempo real"
           valueLabel={prettyPercent(cpuUsagePercent)}
-          subtitle="Historico local alimentado a cada refresh do health check"
+          subtitle="Historico local alimentado a cada atualizacao do health check"
           series={telemetryHistory.map((item) => ({ id: `${item.id}-cpu`, at: item.at, value: item.cpuUsagePercent }))}
           strokeClass="stroke-cyan-400 fill-cyan-400"
           fillClass="fill-cyan-500/15"
